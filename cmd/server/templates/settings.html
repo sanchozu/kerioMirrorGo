@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="uk">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,286 +7,139 @@
   <link href="/static/bootstrap/bootstrap.min.css" rel="stylesheet">
   <link href="/static/font/bootstrap-icons.min.css" rel="stylesheet">
   <style>
-    .section-card {
-      border-left: 5px solid #198754;
-      background: #f8f9fa;
-      margin-bottom: 2rem;
-      padding: 1.5rem 1.5rem 1rem 1.5rem;
-      border-radius: 0.5rem;
-    }
-    .section-title {
-      font-size: 1.4rem;
-      font-weight: 600;
-      margin-bottom: 1rem;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-    .form-label {
-      font-weight: 500;
-      font-size: 1.05rem;
-    }
-    .form-text {
-      color: #6c757d;
-      font-size: 0.95em;
-    }
-    .btn i {
-      margin-right: 0.4em;
-    }
+    body { background: #f3f6fa; }
+    .section-card { border: 0; border-radius: 10px; box-shadow: 0 6px 20px rgba(28,55,90,.08); margin-bottom: 1.25rem; }
+    .section-card .card-header { background: #fff; font-weight: 600; }
+    textarea { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   </style>
 </head>
-<body class="bg-light">
-<div class="container py-5">
-  <div class="card shadow">
-    <div class="card-body">
-      <h1 class="card-title mb-4"><i class="bi bi-gear"></i> Settings</h1>
-      {{if .Message}}
-      <div class="alert alert-success">{{.Message}}</div>
-      {{end}}
-      <form method="post">
-        <div class="section-card">
-          <div class="section-title"><i class="bi bi-clock-history"></i> General Settings</div>
-          <div class="mb-3">
-            <label class="form-label">License Number</label>
-            <input type="text" class="form-control" name="LicenseNumber" value="{{.Config.LicenseNumber}}" placeholder="XXXX-XXXX-XXXX-XXXX">
-            <div class="form-text">Required for IDS and WebFilter updates.</div>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Proxy URL</label>
-            <input type="text" class="form-control" name="ProxyURL" value="{{.Config.ProxyURL}}" placeholder="http://proxy:3128">
-            <div class="form-text">HTTP proxy for all outbound requests (optional).</div>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Schedule Time (HH:MM)</label>
-            <input type="time" class="form-control" name="ScheduleTime" value="{{.Config.ScheduleTime}}">
-            <div class="form-text">Time to start the scheduled task.</div>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Download Retry Count</label>
-            <input type="number" class="form-control" name="RetryCount" value="{{.Config.RetryCount}}">
-            <div class="form-text">How many times to retry on error.</div>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Download Retry Delay Seconds</label>
-            <input type="number" class="form-control" name="RetryDelaySeconds" value="{{.Config.RetryDelaySeconds}}">
-            <div class="form-text">Delay between retries (seconds).</div>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Log Level</label>
-            <select class="form-select" name="LogLevel">
-              <option value="debug" {{if eq .Config.LogLevel "debug"}}selected{{end}}>Debug - Detailed diagnostic information</option>
-              <option value="info" {{if eq .Config.LogLevel "info"}}selected{{end}}>Info - General informational messages</option>
-              <option value="warn" {{if eq .Config.LogLevel "warn"}}selected{{end}}>Warning - Warning messages only</option>
-              <option value="error" {{if eq .Config.LogLevel "error"}}selected{{end}}>Error - Error messages only</option>
-            </select>
-            <div class="form-text">Set logging verbosity level. Debug shows all requests details, Info shows general operations.</div>
-          </div>
-        </div>
-
-        <div class="section-card">
-          <div class="section-title"><i class="bi bi-shield-check"></i> Bitdefender</div>
-          <div class="mb-3">
-            <label class="form-label">Bitdefender Mode</label>
-            <div class="form-check">
-              <input class="form-check-input" type="radio" id="BitdefenderDisabled" name="BitdefenderMode" value="disabled" {{if eq .Config.BitdefenderMode "disabled"}}checked{{end}}>
-              <label class="form-check-label" for="BitdefenderDisabled">
-                Disabled
-              </label>
-              <div class="form-text">Bitdefender functionality is disabled.</div>
-            </div>
-            <div class="form-check mt-2">
-              <input class="form-check-input" type="radio" id="BitdefenderMirror" name="BitdefenderMode" value="mirror" {{if eq .Config.BitdefenderMode "mirror"}}checked{{end}}>
-              <label class="form-check-label" for="BitdefenderMirror">
-                Mirror Mode
-              </label>
-              <div class="form-text">Enable scheduled download of Bitdefender databases.</div>
-            </div>
-            <div class="form-check mt-2">
-              <input class="form-check-input" type="radio" id="BitdefenderProxy" name="BitdefenderMode" value="proxy" {{if eq .Config.BitdefenderMode "proxy"}}checked{{end}}>
-              <label class="form-check-label" for="BitdefenderProxy">
-                Proxy Mode
-              </label>
-              <div class="form-text">Forward requests to Bitdefender server and cache responses locally.</div>
-            </div>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Bitdefender Proxy Base URL</label>
-            <input type="text" class="form-control" name="BitdefenderProxyBaseURL" value="{{.Config.BitdefenderProxyBaseURL}}" placeholder="https://upgrade.bitdefender.com">
-            <div class="form-text">Base URL for Bitdefender proxy mode (used when proxy mode is enabled).</div>
-          </div>
-        </div>
-
-        <div class="section-card">
-          <div class="section-title"><i class="bi bi-cloud-download"></i> Custom Download URLs</div>
-          <div class="mb-3">
-            <label class="form-label">Custom Download URLs (one per line)</label>
-            <textarea class="form-control" name="CustomDownloadUrls" rows="4" placeholder="https://example.com/file1.zip">{{range .Config.CustomDownloadURLs}}{{.}}
-{{end}}</textarea>
-            <div class="form-text">Specify additional download URLs, one per line.</div>
-          </div>
-        </div>
-
-        <div class="section-card">
-          <div class="section-title"><i class="bi bi-link-45deg"></i> API Endpoints</div>
-          <div class="mb-3">
-            <label class="form-label">WebFilter API</label>
-            <input type="text" class="form-control" name="WebFilterApi" value="{{.Config.WebFilterAPI}}" placeholder="https://example.com/api">
-          </div>
-          <div class="mb-3">
-            <label class="form-label">IDS URL</label>
-            <input type="text" class="form-control" name="IDSUrl" value="{{.Config.IDSURL}}" placeholder="https://ids.example.com">
-          </div>
-          <div class="mb-3">
-            <label class="form-label">GeoIP4 URL</label>
-            <input type="text" class="form-control" name="GeoIP4Url" value="{{.Config.GeoIP4URL}}">
-          </div>
-          <div class="mb-3">
-            <label class="form-label">GeoIP6 URL</label>
-            <input type="text" class="form-control" name="GeoIP6Url" value="{{.Config.GeoIP6URL}}">
-          </div>
-          <div class="mb-3">
-            <label class="form-label">GeoLoc URL</label>
-            <input type="text" class="form-control" name="GeoLocUrl" value="{{.Config.GeoLocURL}}">
-          </div>
-        </div>
-
-        <div class="section-card">
-          <div class="section-title"><i class="bi bi-shield-shaded"></i> IDS</div>
-          <div class="form-check mb-2">
-            <input class="form-check-input" type="checkbox" id="EnableIDS1" name="EnableIDS1" value="true" {{if .Config.EnableIDS1}}checked{{end}}>
-            <label class="form-check-label" for="EnableIDS1">Enable IDS 1</label>
-            <div class="form-text">IDSv1 — IPS/IDS Snort (Windows version)</div>
-          </div>
-          <div class="form-check mb-2">
-            <input class="form-check-input" type="checkbox" id="EnableIDS2" name="EnableIDS2" value="true" {{if .Config.EnableIDS2}}checked{{end}}>
-            <label class="form-check-label" for="EnableIDS2">Enable IDS 2</label>
-            <div class="form-text">IDSv2 — Lists of compromised addresses for blocking</div>
-          </div>
-          <div class="form-check mb-2">
-            <input class="form-check-input" type="checkbox" id="EnableIDS3" name="EnableIDS3" value="true" {{if .Config.EnableIDS3}}checked{{end}}>
-            <label class="form-check-label" for="EnableIDS3">Enable IDS 3</label>
-            <div class="form-text">IDSv3 — IPS/IDS Snort (Linux version before 9.5)</div>
-          </div>
-          <div class="form-check mb-2">
-            <input class="form-check-input" type="checkbox" id="EnableIDS4" name="EnableIDS4" value="true" {{if .Config.EnableIDS4}}checked{{end}}>
-            <label class="form-check-label" for="EnableIDS4">Enable IDS 4</label>
-            <div class="form-text">IDSv4 — GeoIP databases for geolocation/blocking visitors</div>
-          </div>
-          <div class="form-check mb-2">
-            <input class="form-check-input" type="checkbox" id="EnableIDS5" name="EnableIDS5" value="true" {{if .Config.EnableIDS5}}checked{{end}}>
-            <label class="form-check-label" for="EnableIDS5">Enable IDS 5</label>
-            <div class="form-text">IDSv5 — IPS/IDS Snort (Linux version 9.5 and above)</div>
-          </div>
-          <div class="form-check mb-2 ms-4">
-            <input class="form-check-input" type="checkbox" id="EnableSnortTemplate" name="EnableSnortTemplate" value="true" {{if .Config.EnableSnortTemplate}}checked{{end}}>
-            <label class="form-check-label" for="EnableSnortTemplate">
-              <i class="bi bi-arrow-return-right"></i> Enable Snort Template (for IDS5)
-            </label>
-            <div class="form-text">Snort template update for IPS in Kerio Control 9.5 (downloaded automatically with IDS5)</div>
-          </div>
-          <div class="mb-3 ms-4">
-            <label class="form-label">Snort Template URL</label>
-            <input type="text" class="form-control" name="SnortTemplateURL" value="{{.Config.SnortTemplateURL}}" placeholder="http://download.kerio.com/control-update/config/v1/snort.tpl">
-            <div class="form-text">URL to download snort.tpl template (used when updating IDS5)</div>
-          </div>
-        </div>
-
-        <div class="section-card">
-          <div class="section-title"><i class="bi bi-grid-3x3-gap"></i> Shield Matrix (Kerio 9.5+)</div>
-          <div class="form-check mb-2">
-            <input class="form-check-input" type="checkbox" id="EnableShieldMatrix" name="EnableShieldMatrix" value="true" {{if .Config.EnableShieldMatrix}}checked{{end}}>
-            <label class="form-check-label" for="EnableShieldMatrix">Enable Shield Matrix</label>
-            <div class="form-text">Shield Matrix for Kerio Control 9.5 and above</div>
-          </div>
-          <div class="form-check mb-2">
-            <input class="form-check-input" type="checkbox" id="ShieldMatrixPreloadFiles" name="ShieldMatrixPreloadFiles" value="true" {{if .Config.ShieldMatrixPreloadFiles}}checked{{end}}>
-            <label class="form-check-label" for="ShieldMatrixPreloadFiles">Preload Shield Matrix Files</label>
-            <div class="form-text">Preload all Shield Matrix files on schedule (instead of on-demand download)</div>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Shield Matrix Base URL</label>
-            <input type="text" class="form-control" name="ShieldMatrixBaseURL" value="{{.Config.ShieldMatrixBaseURL}}" placeholder="https://shieldmatrix-updates.gfikeriocontrol.com/check_update/">
-            <div class="form-text">Base URL for Shield Matrix check_update endpoint</div>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Shield Matrix Client ID</label>
-            <input type="text" class="form-control" name="ShieldMatrixClientID" value="{{.Config.ShieldMatrixClientID}}" placeholder="control">
-            <div class="form-text">Client ID for Shield Matrix requests (e.g., "control")</div>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Shield Matrix Version</label>
-            <input type="text" class="form-control" name="ShieldMatrixVersion" value="{{.Config.ShieldMatrixVersion}}" placeholder="9.5.0">
-            <div class="form-text">Kerio version for Shield Matrix (e.g., "9.5.0")</div>
-          </div>
-        </div>
-
-        <div class="section-card">
-          <div class="section-title"><i class="bi bi-telegram"></i> Telegram Notifications</div>
-          <div class="mb-3">
-            <label class="form-label">Bot Token</label>
-            <input type="text" class="form-control" name="TelegramBotToken" value="{{.Config.TelegramBotToken}}" placeholder="123456789:AABBccDDee...">
-            <div class="form-text">Telegram Bot API token. Get it from @BotFather. Leave empty to disable notifications.</div>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Chat ID</label>
-            <input type="text" class="form-control" name="TelegramChatID" value="{{.Config.TelegramChatID}}" placeholder="-1001234567890">
-            <div class="form-text">Telegram chat or channel ID to send messages to. Use @userinfobot to get your chat ID.</div>
-          </div>
-          <div class="form-check mb-2">
-            <input class="form-check-input" type="checkbox" id="TelegramNotifyOnError" name="TelegramNotifyOnError" value="true" {{if .Config.TelegramNotifyOnError}}checked{{end}}>
-            <label class="form-check-label" for="TelegramNotifyOnError">Notify on errors</label>
-            <div class="form-text">Send a notification when any component fails to update.</div>
-          </div>
-          <div class="form-check mb-2">
-            <input class="form-check-input" type="checkbox" id="TelegramNotifyOnSuccess" name="TelegramNotifyOnSuccess" value="true" {{if .Config.TelegramNotifyOnSuccess}}checked{{end}}>
-            <label class="form-check-label" for="TelegramNotifyOnSuccess">Notify on successful update</label>
-            <div class="form-text">Send a notification when all components update successfully.</div>
-          </div>
-          <div class="form-check mb-2">
-            <input class="form-check-input" type="checkbox" id="TelegramNotifyOnStart" name="TelegramNotifyOnStart" value="true" {{if .Config.TelegramNotifyOnStart}}checked{{end}}>
-            <label class="form-check-label" for="TelegramNotifyOnStart">Notify on update start</label>
-            <div class="form-text">Send a notification when a scheduled update begins.</div>
-          </div>
-        </div>
-
-        <div class="section-card">
-          <div class="section-title"><i class="bi bi-shield-lock"></i> IP Access Control</div>
-          <div class="mb-3">
-            <label class="form-label">Allowed IPs (Whitelist)</label>
-            <textarea class="form-control" name="AllowedIPs" rows="4" placeholder="192.168.1.100
-192.168.2.0/24
-10.0.0.0/8">{{range .Config.AllowedIPs}}{{.}}
-{{end}}</textarea>
-            <div class="form-text">One IP address or CIDR range per line. If specified, only these IPs will be allowed access. Leave empty to allow all.</div>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Blocked IPs (Blacklist)</label>
-            <textarea class="form-control" name="BlockedIPs" rows="4" placeholder="203.0.113.50
-198.51.100.0/24">{{range .Config.BlockedIPs}}{{.}}
-{{end}}</textarea>
-            <div class="form-text">One IP address or CIDR range per line. These IPs will be blocked. Blacklist takes priority over whitelist.</div>
-          </div>
-        </div>
-
-        <div class="section-card">
-          <div class="section-title"><i class="bi bi-folder2-open"></i> Paths</div>
-          <div class="mb-3">
-            <label class="form-label">Database Path</label>
-            <input type="text" class="form-control" name="DatabasePath" value="{{.Config.DatabasePath}}" placeholder="/path/to/database.db">
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Log Path</label>
-            <input type="text" class="form-control" name="LogPath" value="{{.Config.LogPath}}" placeholder="/path/to/logs/">
-          </div>
-        </div>
-
-        <div class="d-flex align-items-center mt-4 gap-2">
-          <button type="submit" class="btn btn-success"><i class="bi bi-save"></i> Save</button>
-          <a href="/" class="btn btn-secondary"><i class="bi bi-arrow-left"></i> Back</a>
-        </div>
-      </form>
+<body>
+<nav class="navbar navbar-expand-lg bg-white border-bottom">
+  <div class="container">
+    <a class="navbar-brand fw-semibold" href="/dashboard"><i class="bi bi-shield-check"></i> Kerio Mirror Go</a>
+    <div class="d-flex gap-2 ms-auto">
+      <a href="/dashboard" class="btn btn-outline-secondary btn-sm"><i class="bi bi-speedometer2"></i> Dashboard</a>
+      <a href="/logout" class="btn btn-outline-danger btn-sm"><i class="bi bi-box-arrow-right"></i> Logout</a>
     </div>
   </div>
-</div>
+</nav>
+
+<main class="container py-4">
+  <h1 class="h3 mb-3"><i class="bi bi-gear"></i> Settings</h1>
+  {{if .Message}}<div class="alert alert-success">{{.Message}}</div>{{end}}
+
+  <form method="post">
+    <section class="card section-card">
+      <div class="card-header"><i class="bi bi-shield-lock"></i> Admin Access</div>
+      <div class="card-body">
+        <label class="form-label" for="AdminToken">Admin token / password</label>
+        <div class="input-group">
+          <input type="text" class="form-control" id="AdminToken" name="AdminToken" value="{{.Config.AdminToken}}" autocomplete="new-password">
+          <button type="submit" class="btn btn-outline-primary" name="GenerateAdminToken" value="true"><i class="bi bi-shuffle"></i> Generate</button>
+        </div>
+        <div class="form-text">Default is <code>admin</code>. A generated token is created server-side with crypto/rand and saved immediately.</div>
+      </div>
+    </section>
+
+    <section class="card section-card">
+      <div class="card-header"><i class="bi bi-clock-history"></i> General</div>
+      <div class="card-body row g-3">
+        <div class="col-md-6"><label class="form-label">License Number</label><input type="text" class="form-control" name="LicenseNumber" value="{{.Config.LicenseNumber}}"></div>
+        <div class="col-md-6"><label class="form-label">Proxy URL</label><input type="text" class="form-control" name="ProxyURL" value="{{.Config.ProxyURL}}" placeholder="http://proxy:3128"></div>
+        <div class="col-md-3"><label class="form-label">Schedule Time</label><input type="time" class="form-control" name="ScheduleTime" value="{{.Config.ScheduleTime}}"></div>
+        <div class="col-md-3"><label class="form-label">Retry Count</label><input type="number" class="form-control" name="RetryCount" value="{{.Config.RetryCount}}"></div>
+        <div class="col-md-3"><label class="form-label">Retry Delay Seconds</label><input type="number" class="form-control" name="RetryDelaySeconds" value="{{.Config.RetryDelaySeconds}}"></div>
+        <div class="col-md-3"><label class="form-label">Log Level</label><select class="form-select" name="LogLevel"><option value="debug" {{if eq .Config.LogLevel "debug"}}selected{{end}}>Debug</option><option value="info" {{if eq .Config.LogLevel "info"}}selected{{end}}>Info</option><option value="warn" {{if eq .Config.LogLevel "warn"}}selected{{end}}>Warn</option><option value="error" {{if eq .Config.LogLevel "error"}}selected{{end}}>Error</option></select></div>
+      </div>
+    </section>
+
+    <section class="card section-card">
+      <div class="card-header"><i class="bi bi-link-45deg"></i> API Endpoints</div>
+      <div class="card-body row g-3">
+        <div class="col-12"><label class="form-label">IDS URL</label><input type="text" class="form-control" name="IDSUrl" value="{{.Config.IDSURL}}"></div>
+        <div class="col-12"><label class="form-label">WebFilter API</label><input type="text" class="form-control" name="WebFilterApi" value="{{.Config.WebFilterAPI}}"></div>
+        <div class="col-md-4"><label class="form-label">GeoIP4 URL</label><input type="text" class="form-control" name="GeoIP4Url" value="{{.Config.GeoIP4URL}}"></div>
+        <div class="col-md-4"><label class="form-label">GeoIP6 URL</label><input type="text" class="form-control" name="GeoIP6Url" value="{{.Config.GeoIP6URL}}"></div>
+        <div class="col-md-4"><label class="form-label">GeoLoc URL</label><input type="text" class="form-control" name="GeoLocUrl" value="{{.Config.GeoLocURL}}"></div>
+      </div>
+    </section>
+
+    <section class="card section-card">
+      <div class="card-header"><i class="bi bi-shield-shaded"></i> IDS and Snort</div>
+      <div class="card-body">
+        <div class="row g-3 mb-3">
+          <div class="col-md-2 form-check ms-3"><input class="form-check-input" type="checkbox" id="EnableIDS1" name="EnableIDS1" value="true" {{if .Config.EnableIDS1}}checked{{end}}><label class="form-check-label" for="EnableIDS1">IDS 1</label></div>
+          <div class="col-md-2 form-check ms-3"><input class="form-check-input" type="checkbox" id="EnableIDS2" name="EnableIDS2" value="true" {{if .Config.EnableIDS2}}checked{{end}}><label class="form-check-label" for="EnableIDS2">IDS 2</label></div>
+          <div class="col-md-2 form-check ms-3"><input class="form-check-input" type="checkbox" id="EnableIDS3" name="EnableIDS3" value="true" {{if .Config.EnableIDS3}}checked{{end}}><label class="form-check-label" for="EnableIDS3">IDS 3</label></div>
+          <div class="col-md-2 form-check ms-3"><input class="form-check-input" type="checkbox" id="EnableIDS4" name="EnableIDS4" value="true" {{if .Config.EnableIDS4}}checked{{end}}><label class="form-check-label" for="EnableIDS4">IDS 4</label></div>
+          <div class="col-md-2 form-check ms-3"><input class="form-check-input" type="checkbox" id="EnableIDS5" name="EnableIDS5" value="true" {{if .Config.EnableIDS5}}checked{{end}}><label class="form-check-label" for="EnableIDS5">IDS 5</label></div>
+        </div>
+        <div class="form-check mb-3"><input class="form-check-input" type="checkbox" id="EnableSnortTemplate" name="EnableSnortTemplate" value="true" {{if .Config.EnableSnortTemplate}}checked{{end}}><label class="form-check-label" for="EnableSnortTemplate">Enable Snort Template</label></div>
+        <label class="form-label">Snort Template URL</label><input type="text" class="form-control" name="SnortTemplateURL" value="{{.Config.SnortTemplateURL}}">
+      </div>
+    </section>
+
+    <section class="card section-card">
+      <div class="card-header"><i class="bi bi-virus2"></i> Bitdefender</div>
+      <div class="card-body row g-3">
+        <div class="col-md-4"><label class="form-label">Mode</label><select class="form-select" name="BitdefenderMode"><option value="disabled" {{if eq .Config.BitdefenderMode "disabled"}}selected{{end}}>Disabled</option><option value="mirror" {{if eq .Config.BitdefenderMode "mirror"}}selected{{end}}>Mirror</option><option value="proxy" {{if eq .Config.BitdefenderMode "proxy"}}selected{{end}}>Proxy</option></select></div>
+        <div class="col-md-8"><label class="form-label">Proxy Base URL</label><input type="text" class="form-control" name="BitdefenderProxyBaseURL" value="{{.Config.BitdefenderProxyBaseURL}}"></div>
+        <div class="col-12"><label class="form-label">Bitdefender URLs</label><textarea class="form-control" name="BitdefenderUrls" rows="3">{{range .Config.BitdefenderURLs}}{{.}}
+{{end}}</textarea></div>
+      </div>
+    </section>
+
+    <section class="card section-card">
+      <div class="card-header"><i class="bi bi-grid-3x3-gap"></i> Shield Matrix</div>
+      <div class="card-body row g-3">
+        <div class="col-md-3 form-check ms-3"><input class="form-check-input" type="checkbox" id="EnableShieldMatrix" name="EnableShieldMatrix" value="true" {{if .Config.EnableShieldMatrix}}checked{{end}}><label class="form-check-label" for="EnableShieldMatrix">Enable</label></div>
+        <div class="col-md-3 form-check ms-3"><input class="form-check-input" type="checkbox" id="ShieldMatrixPreloadFiles" name="ShieldMatrixPreloadFiles" value="true" {{if .Config.ShieldMatrixPreloadFiles}}checked{{end}}><label class="form-check-label" for="ShieldMatrixPreloadFiles">Preload files</label></div>
+        <div class="col-md-6"><label class="form-label">Version</label><input type="text" class="form-control" name="ShieldMatrixVersion" value="{{.Config.ShieldMatrixVersion}}"></div>
+        <div class="col-md-8"><label class="form-label">Base URL</label><input type="text" class="form-control" name="ShieldMatrixBaseURL" value="{{.Config.ShieldMatrixBaseURL}}"></div>
+        <div class="col-md-4"><label class="form-label">Client ID</label><input type="text" class="form-control" name="ShieldMatrixClientID" value="{{.Config.ShieldMatrixClientID}}"></div>
+      </div>
+    </section>
+
+    <section class="card section-card">
+      <div class="card-header"><i class="bi bi-cloud-download"></i> Custom Downloads</div>
+      <div class="card-body"><textarea class="form-control" name="CustomDownloadUrls" rows="4">{{range .Config.CustomDownloadURLs}}{{.}}
+{{end}}</textarea></div>
+    </section>
+
+    <section class="card section-card">
+      <div class="card-header"><i class="bi bi-telegram"></i> Telegram Notifications</div>
+      <div class="card-body row g-3">
+        <div class="col-md-6"><label class="form-label">Bot Token</label><input type="text" class="form-control" name="TelegramBotToken" value="{{.Config.TelegramBotToken}}"></div>
+        <div class="col-md-6"><label class="form-label">Chat ID</label><input type="text" class="form-control" name="TelegramChatID" value="{{.Config.TelegramChatID}}"></div>
+        <div class="col-md-3 form-check ms-3"><input class="form-check-input" type="checkbox" id="TelegramNotifyOnError" name="TelegramNotifyOnError" value="true" {{if .Config.TelegramNotifyOnError}}checked{{end}}><label class="form-check-label" for="TelegramNotifyOnError">Errors</label></div>
+        <div class="col-md-3 form-check ms-3"><input class="form-check-input" type="checkbox" id="TelegramNotifyOnSuccess" name="TelegramNotifyOnSuccess" value="true" {{if .Config.TelegramNotifyOnSuccess}}checked{{end}}><label class="form-check-label" for="TelegramNotifyOnSuccess">Success</label></div>
+        <div class="col-md-3 form-check ms-3"><input class="form-check-input" type="checkbox" id="TelegramNotifyOnStart" name="TelegramNotifyOnStart" value="true" {{if .Config.TelegramNotifyOnStart}}checked{{end}}><label class="form-check-label" for="TelegramNotifyOnStart">Start</label></div>
+      </div>
+    </section>
+
+    <section class="card section-card">
+      <div class="card-header"><i class="bi bi-shield-lock"></i> IP Access Control</div>
+      <div class="card-body row g-3">
+        <div class="col-md-6"><label class="form-label">Allowed IPs</label><textarea class="form-control" name="AllowedIPs" rows="4">{{range .Config.AllowedIPs}}{{.}}
+{{end}}</textarea></div>
+        <div class="col-md-6"><label class="form-label">Blocked IPs</label><textarea class="form-control" name="BlockedIPs" rows="4">{{range .Config.BlockedIPs}}{{.}}
+{{end}}</textarea></div>
+      </div>
+    </section>
+
+    <section class="card section-card">
+      <div class="card-header"><i class="bi bi-folder2-open"></i> Paths</div>
+      <div class="card-body row g-3">
+        <div class="col-md-6"><label class="form-label">Database Path</label><input type="text" class="form-control" name="DatabasePath" value="{{.Config.DatabasePath}}"></div>
+        <div class="col-md-6"><label class="form-label">Log Path</label><input type="text" class="form-control" name="LogPath" value="{{.Config.LogPath}}"></div>
+      </div>
+    </section>
+
+    <div class="d-flex gap-2 mb-5">
+      <button type="submit" class="btn btn-success"><i class="bi bi-save"></i> Save</button>
+      <a href="/dashboard" class="btn btn-secondary"><i class="bi bi-arrow-left"></i> Back</a>
+    </div>
+  </form>
+</main>
 </body>
 </html>
