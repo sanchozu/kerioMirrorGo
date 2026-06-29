@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kerio Mirror Go Login</title>
+  <link href="/static/bootstrap/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="/static/font/bootstrap-icons.min.css">
+  <style>
+    body {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, #eef4ff 0%, #d7e5f8 100%);
+    }
+    .login-card {
+      width: min(420px, calc(100vw - 2rem));
+      border: 0;
+      border-radius: 14px;
+      box-shadow: 0 18px 50px rgba(31, 64, 104, 0.16);
+    }
+    .brand-mark {
+      width: 48px;
+      height: 48px;
+      display: grid;
+      place-items: center;
+      border-radius: 12px;
+      background: #0d6efd;
+      color: #fff;
+      margin: 0 auto 1rem;
+    }
+  </style>
+</head>
+<body>
+  <main class="card login-card">
+    <div class="card-body p-4 p-md-5">
+      <div class="brand-mark"><i class="bi bi-shield-lock fs-4"></i></div>
+      <h1 class="h4 text-center mb-4">{{.ServiceName}}</h1>
+      {{if .Error}}
+      <div class="alert alert-danger" role="alert">{{.Error}}</div>
+      {{end}}
+      <form method="post" action="/login">
+        <div class="mb-3">
+          <label class="form-label" for="token">Admin token / password</label>
+          <input class="form-control form-control-lg" id="token" name="token" type="password" autocomplete="current-password" autofocus required>
+        </div>
+        <button class="btn btn-primary btn-lg w-100" type="submit">Увійти</button>
+      </form>
+    </div>
+  </main>
+</body>
+</html>
