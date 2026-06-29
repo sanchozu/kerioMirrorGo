@@ -24,6 +24,7 @@ type Config struct {
 	GeoLocURL               string
 	LicenseNumber           string
 	LogLevel                string   // уровень логирования: debug, info, warn, error
+	AdminToken              string   // token/password for web-admin access
 	CustomDownloadURLs      []string // Пользовательские URL для скачивания
 	EnableIDS1              bool     // Включить обновление IDS1
 	EnableIDS2              bool     // Включить обновление IDS2
@@ -70,6 +71,7 @@ func Load(path string) (*Config, error) {
 	viper.SetDefault("GEOLOC_URL", "https://raw.githubusercontent.com/wyot1/GeoLite2-Unwalled/downloads/COUNTRY/CSV/GeoLite2-Country-Locations-en.csv")
 	viper.SetDefault("LICENSE_NUMBER", "")
 	viper.SetDefault("LOG_LEVEL", "info")
+	viper.SetDefault("ADMIN_TOKEN", "admin")
 	viper.SetDefault("CUSTOM_DOWNLOAD_URLS", []string{
 		"http://download.kerio.com/control-update/config/v1/snort.tpl",
 		"http://download.kerio.com/control-update/config/v1/snort.tpl.md5",
@@ -117,6 +119,7 @@ func Load(path string) (*Config, error) {
 		GeoLocURL:               viper.GetString("GEOLOC_URL"),
 		LicenseNumber:           viper.GetString("LICENSE_NUMBER"),
 		LogLevel:                viper.GetString("LOG_LEVEL"),
+		AdminToken:              viper.GetString("ADMIN_TOKEN"),
 		CustomDownloadURLs:      viper.GetStringSlice("CUSTOM_DOWNLOAD_URLS"),
 		EnableIDS1:              viper.GetBool("ENABLE_IDS1"),
 		EnableIDS2:              viper.GetBool("ENABLE_IDS2"),
@@ -157,6 +160,7 @@ func Save(cfg *Config, path string) error {
 	viper.Set("GEOLOC_URL", cfg.GeoLocURL)
 	viper.Set("LICENSE_NUMBER", cfg.LicenseNumber)
 	viper.Set("LOG_LEVEL", cfg.LogLevel)
+	viper.Set("ADMIN_TOKEN", cfg.AdminToken)
 	viper.Set("CUSTOM_DOWNLOAD_URLS", cfg.CustomDownloadURLs)
 	viper.Set("BITDEFENDER_MODE", cfg.BitdefenderMode)
 	viper.Set("ENABLE_IDS1", cfg.EnableIDS1)
