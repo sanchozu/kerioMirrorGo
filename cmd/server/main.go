@@ -54,7 +54,7 @@ func main() {
 	})
 	// Add IP filter middleware
 	e.Use(middleware.IPFilterMiddleware(cfg, logger))
-	handlers.RegisterRoutes(e, cfg, logger, embeddedFiles)
+	handlers.RegisterAdminRoutes(e, cfg, logger, embeddedFiles)
 
 	addr := serverAddressFromEnv()
 	logger.Infof("Starting HTTP server on %s", addr)
