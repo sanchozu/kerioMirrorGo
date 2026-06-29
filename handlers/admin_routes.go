@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"kerio-mirror-go/config"
 	"kerio-mirror-go/logging"
@@ -72,10 +73,12 @@ func dashboardPageHandler(embeddedFiles embed.FS) echo.HandlerFunc {
 		c.Response().Header().Set(echo.HeaderContentType, "text/html; charset=utf-8")
 		return t.Execute(c.Response(), struct {
 			*DashboardStatus
-			Lang string
-			Text map[string]string
+			CurrentDate string
+			Lang        string
+			Text        map[string]string
 		}{
 			DashboardStatus: status,
+			CurrentDate:     time.Now().Format("02.01.2006"),
 			Lang:            lang,
 			Text:            dashboardText(lang),
 		})
