@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Settings</title>
+  <title>Налаштування</title>
   <link href="/static/bootstrap/bootstrap.min.css" rel="stylesheet">
   <link href="/static/font/bootstrap-icons.min.css" rel="stylesheet">
   <style>
@@ -18,35 +18,35 @@
   <div class="container">
     <a class="navbar-brand fw-semibold" href="/dashboard"><i class="bi bi-shield-check"></i> Kerio Mirror Go</a>
     <div class="d-flex gap-2 ms-auto">
-      <a href="/dashboard" class="btn btn-outline-secondary btn-sm"><i class="bi bi-speedometer2"></i> Dashboard</a>
-      <a href="/logout" class="btn btn-outline-danger btn-sm"><i class="bi bi-box-arrow-right"></i> Logout</a>
+      <a href="/dashboard" class="btn btn-outline-secondary btn-sm"><i class="bi bi-speedometer2"></i> Панель</a>
+      <a href="/logout" class="btn btn-outline-danger btn-sm"><i class="bi bi-box-arrow-right"></i> Вийти</a>
     </div>
   </div>
 </nav>
 
 <main class="container py-4">
-  <h1 class="h3 mb-3"><i class="bi bi-gear"></i> Settings</h1>
+  <h1 class="h3 mb-3"><i class="bi bi-gear"></i> Налаштування</h1>
   {{if .Message}}<div class="alert alert-success">{{.Message}}</div>{{end}}
 
   <form method="post">
     <section class="card section-card">
-      <div class="card-header"><i class="bi bi-shield-lock"></i> Admin Access</div>
+      <div class="card-header"><i class="bi bi-shield-lock"></i> Доступ адміністратора</div>
       <div class="card-body">
-        <label class="form-label" for="AdminToken">Admin token / password</label>
+        <label class="form-label" for="AdminToken">Токен / пароль адміністратора</label>
         <div class="input-group">
           <input type="text" class="form-control" id="AdminToken" name="AdminToken" value="{{.Config.AdminToken}}" autocomplete="new-password">
-          <button type="submit" class="btn btn-outline-primary" name="GenerateAdminToken" value="true"><i class="bi bi-shuffle"></i> Generate</button>
+          <button type="submit" class="btn btn-outline-primary" name="GenerateAdminToken" value="true"><i class="bi bi-shuffle"></i> Згенерувати</button>
         </div>
-        <div class="form-text">Default is <code>admin</code>. A generated token is created server-side with crypto/rand and saved immediately.</div>
+        <div class="form-text">Типове значення — <code>admin</code>. Згенерований токен створюється на сервері та одразу зберігається.</div>
       </div>
     </section>
 
     <section class="card section-card">
-      <div class="card-header"><i class="bi bi-clock-history"></i> General</div>
+      <div class="card-header"><i class="bi bi-clock-history"></i> Загальні</div>
       <div class="card-body row g-3">
-        <div class="col-md-6"><label class="form-label">License Number</label><input type="text" class="form-control" name="LicenseNumber" value="{{.Config.LicenseNumber}}"></div>
+        <div class="col-md-6"><label class="form-label">Номер ліцензії</label><input type="text" class="form-control" name="LicenseNumber" value="{{.Config.LicenseNumber}}"></div>
         <div class="col-md-6"><label class="form-label">Proxy URL</label><input type="text" class="form-control" name="ProxyURL" value="{{.Config.ProxyURL}}" placeholder="http://proxy:3128"></div>
-        <div class="col-md-3"><label class="form-label">Schedule Time</label><input type="time" class="form-control" name="ScheduleTime" value="{{.Config.ScheduleTime}}"></div>
+        <div class="col-md-3"><label class="form-label">Час за розкладом</label><input type="time" class="form-control" name="ScheduleTime" value="{{.Config.ScheduleTime}}"></div>
         <div class="col-md-3"><label class="form-label">Retry Count</label><input type="number" class="form-control" name="RetryCount" value="{{.Config.RetryCount}}"></div>
         <div class="col-md-3"><label class="form-label">Retry Delay Seconds</label><input type="number" class="form-control" name="RetryDelaySeconds" value="{{.Config.RetryDelaySeconds}}"></div>
         <div class="col-md-3"><label class="form-label">Log Level</label><select class="form-select" name="LogLevel"><option value="debug" {{if eq .Config.LogLevel "debug"}}selected{{end}}>Debug</option><option value="info" {{if eq .Config.LogLevel "info"}}selected{{end}}>Info</option><option value="warn" {{if eq .Config.LogLevel "warn"}}selected{{end}}>Warn</option><option value="error" {{if eq .Config.LogLevel "error"}}selected{{end}}>Error</option></select></div>
@@ -136,8 +136,8 @@
     </section>
 
     <div class="d-flex gap-2 mb-5">
-      <button type="submit" class="btn btn-success"><i class="bi bi-save"></i> Save</button>
-      <a href="/dashboard" class="btn btn-secondary"><i class="bi bi-arrow-left"></i> Back</a>
+      <button type="submit" class="btn btn-success"><i class="bi bi-save"></i> Зберегти</button>
+      <a href="/dashboard" class="btn btn-secondary"><i class="bi bi-arrow-left"></i> Назад</a>
     </div>
   </form>
 </main>

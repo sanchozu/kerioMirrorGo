@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"compress/gzip"
 	"crypto/rand"
 	"database/sql"
 	"encoding/json"
@@ -200,7 +201,10 @@ func cachedVendorFileHandler(cfg *config.Config, logger *logrus.Logger, service 
 				headers["User-Agent"] = "WSLib 1.4 [3, 0, 0, 317]"
 			}
 			remote := strings.TrimRight(upstream, "/") + "/" + strings.TrimLeft(filepath.ToSlash(rel), "/")
-			if err := downloadAtomic(cfg, remote, local, headers); err != nil {
+			if err := downloadAtomic(cfg, remote, local, headers); err != nil && strings.HasSuffix(strings.ToLower(rel), ".gzip") && strings.Contains(err.Error(), "upstream status 404") {
+				err = downloadGzipFallbackAtomic(cfg, remote, local, headers)
+			}
+			if err != nil {
 				logger.Warnf("%s cache fetch failed for %s: %v", service, rel, err)
 				return c.String(http.StatusBadGateway, "502 Bad Gateway")
 			}
@@ -606,6 +610,34 @@ func downloadAtomic(cfg *config.Config, target, destination string, headers map[
 	if status != http.StatusOK {
 		return fmt.Errorf("upstream status %d", status)
 	}
+	return writeAtomicBytes(destination, data)
+}
+
+// downloadGzipFallbackAtomic is used by the Kerio CDN, which serves a few
+// signed update files only in their uncompressed form. The payload is kept
+// byte-for-byte intact; only its transport wrapper is regenerated for clients
+// that request the historical .gzip URL.
+func downloadGzipFallbackAtomic(cfg *config.Config, target, destination string, headers map[string]string) error {
+	plainTarget := strings.TrimSuffix(target, ".gzip")
+	data, status, err := upstreamBytes(cfg, http.MethodGet, plainTarget, nil, headers)
+	if err != nil {
+		return err
+	}
+	if status != http.StatusOK {
+		return fmt.Errorf("upstream fallback status %d", status)
+	}
+	var compressed bytes.Buffer
+	zw := gzip.NewWriter(&compressed)
+	if _, err := zw.Write(data); err != nil {
+		return err
+	}
+	if err := zw.Close(); err != nil {
+		return err
+	}
+	return writeAtomicBytes(destination, compressed.Bytes())
+}
+
+func writeAtomicBytes(destination string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
 		return err
 	}

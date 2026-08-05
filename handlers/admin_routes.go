@@ -32,6 +32,7 @@ func RegisterAdminRoutes(e *echo.Echo, cfg *config.Config, logger *logrus.Logger
 	e.GET("/logs", protected(serveFileHandler(cfg.LogPath, embeddedFiles)))
 	e.GET("/logs/raw", protected(serveRawLogHandler(cfg.LogPath)))
 	e.GET("/logs/full_raw", protected(serveFullRawLogHandler(cfg.LogPath)))
+	e.POST("/logs/clear", protected(clearLogHandler(cfg.LogPath, logger)))
 	e.GET("/update", protected(updateHandler(cfg, logger)))
 
 	e.GET("/getkey.php", webFilterKeyHandler(cfg))

@@ -31,7 +31,7 @@ func main() {
 	}
 
 	logger := logging.NewLogger(cfg.LogPath, cfg.LogLevel)
-	logger.Info("Starting kerio-mirror-go v0.5.4")
+	logger.Info("Starting kerio-mirror-go v0.5.5")
 
 	if err := db.Init(cfg.DatabasePath); err != nil {
 		logger.Fatalf("DB init error: %v", err)

@@ -36,6 +36,7 @@
     <div class="card-body d-flex flex-column flex-lg-row justify-content-between gap-3">
       <div>
         <h1 class="h3 mb-2">{{index .Text "Dashboard"}}</h1>
+        <div class="text-muted"><i class="bi bi-box-seam"></i> <strong>{{index .Text "MirrorVersion"}}:</strong> {{.Version}}</div>
         <div class="text-muted"><i class="bi bi-clock-history"></i> <strong>{{index .Text "CurrentTime"}}:</strong> {{.CurrentTime}}</div>
         <div class="text-muted"><i class="bi bi-arrow-repeat"></i> <strong>{{index .Text "LastUpdate"}}:</strong> {{.LastUpdate}}</div>
         <div class="text-muted"><i class="bi bi-calendar-event"></i> <strong>{{index .Text "NextScheduled"}}:</strong> {{.Config.ScheduleTime}} {{index .Text "Daily"}}</div>
