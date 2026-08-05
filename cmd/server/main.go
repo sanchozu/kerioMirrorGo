@@ -1,9 +1,12 @@
 package main
 
 import (
+	"crypto/tls"
 	"embed"
 	"flag"
 	"log"
+	"net/http"
+	"os"
 
 	"kerio-mirror-go/config"
 	"kerio-mirror-go/db"
@@ -58,6 +61,30 @@ func main() {
 
 	addr := serverAddressFromEnv()
 	logger.Infof("Starting HTTP server on %s", addr)
+
+	tlsAddr := tlsServerAddressFromEnv()
+	tlsCert := os.Getenv("TLS_CERT")
+	tlsKey := os.Getenv("TLS_KEY")
+
+	if tlsCert != "" && tlsKey != "" {
+		httpServer := &http.Server{Addr: addr, Handler: e}
+		tlsServer := &http.Server{
+			Addr:      tlsAddr,
+			Handler:   e,
+			TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12},
+		}
+		go func() {
+			logger.Infof("Starting HTTPS server on %s", tlsAddr)
+			if err := tlsServer.ListenAndServeTLS(tlsCert, tlsKey); err != nil && err != http.ErrServerClosed {
+				logger.Fatalf("HTTPS server error: %v", err)
+			}
+		}()
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Fatalf("HTTP server error: %v", err)
+		}
+		return
+	}
+
 	if err := e.Start(addr); err != nil {
 		logger.Fatalf("HTTP server error: %v", err)
 	}

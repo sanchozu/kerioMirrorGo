@@ -62,3 +62,55 @@ func TestServerAddressFromEnv(t *testing.T) {
 		})
 	}
 }
+
+func TestTLSServerAddressFromEnv(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{
+			name: "defaults to all interfaces and port 443",
+			env:  map[string]string{},
+			want: "0.0.0.0:443",
+		},
+		{
+			name: "uses TLS_PORT",
+			env: map[string]string{
+				"TLS_PORT": "8443",
+			},
+			want: "0.0.0.0:8443",
+		},
+		{
+			name: "falls back to HTTPS_PORT",
+			env: map[string]string{
+				"HTTPS_PORT": "9443",
+			},
+			want: "0.0.0.0:9443",
+		},
+		{
+			name: "uses host from HOST",
+			env: map[string]string{
+				"HOST":     "127.0.0.1",
+				"TLS_PORT": "8443",
+			},
+			want: "127.0.0.1:8443",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("HOST", "")
+			t.Setenv("IP", "")
+			t.Setenv("TLS_PORT", "")
+			t.Setenv("HTTPS_PORT", "")
+			for key, value := range tt.env {
+				t.Setenv(key, value)
+			}
+
+			if got := tlsServerAddressFromEnv(); got != tt.want {
+				t.Fatalf("tlsServerAddressFromEnv() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
