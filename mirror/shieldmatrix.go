@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"kerio-mirror-go/config"
@@ -21,6 +23,70 @@ import (
 type ShieldMatrixCheckUpdateResponse struct {
 	Available bool   `json:"available"`
 	URL       string `json:"url"`
+}
+
+var (
+	shieldMatrixCheckMu   sync.Mutex
+	shieldMatrixLastCheck time.Time
+)
+
+const shieldMatrixCheckTTL = 5 * time.Minute
+
+// CheckAndPurgeShieldMatrixCache сравнивает upstream-версию Shield Matrix
+// (CloudFront .../version) с версией из БД. Если версия изменилась, очищает
+// кэш mirror/matrix/ipv4 и ipv6 и обновляет версию в БД — новые файлы будут
+// скачаны по запросу с актуального CloudFront URL. Проверка выполняется не
+// чаще одного раза в shieldMatrixCheckTTL.
+func CheckAndPurgeShieldMatrixCache(conn *sql.DB, cfg *config.Config, logger *logrus.Logger) {
+	shieldMatrixCheckMu.Lock()
+	defer shieldMatrixCheckMu.Unlock()
+	if time.Since(shieldMatrixLastCheck) < shieldMatrixCheckTTL {
+		return
+	}
+	shieldMatrixLastCheck = time.Now()
+
+	cloudFrontURL := db.GetShieldMatrixCloudFrontURL(conn)
+	if cloudFrontURL == "" {
+		return
+	}
+	current := db.GetShieldMatrixVersion(conn)
+	if current == "" {
+		return
+	}
+
+	versionURL := fmt.Sprintf("%s/version", strings.TrimSuffix(cloudFrontURL, "/"))
+	resp, err := utils.HTTPGetWithRetry(versionURL, cfg.RetryCount, time.Duration(cfg.RetryDelaySeconds)*time.Second, cfg.ProxyURL)
+	if err != nil {
+		logger.Debugf("Shield Matrix: version check skipped: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		logger.Debugf("Shield Matrix: version check skipped, status %d", resp.StatusCode)
+		return
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		logger.Debugf("Shield Matrix: version check skipped, read error: %v", err)
+		return
+	}
+	remote := strings.TrimSpace(string(body))
+	if remote == "" || remote == current {
+		return
+	}
+
+	logger.Infof("Shield Matrix: version changed %q -> %q, purging cache", current, remote)
+	for _, dir := range []string{filepath.Join("mirror", "matrix", "ipv4"), filepath.Join("mirror", "matrix", "ipv6")} {
+		if err := os.RemoveAll(dir); err != nil {
+			logger.Warnf("Shield Matrix: failed to remove %s: %v", dir, err)
+		}
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			logger.Warnf("Shield Matrix: failed to create %s: %v", dir, err)
+		}
+	}
+	if err := db.UpdateShieldMatrixVersion(conn, remote, true, time.Now()); err != nil {
+		logger.Warnf("Shield Matrix: failed to update version in DB: %v", err)
+	}
 }
 
 // UpdateShieldMatrix проверяет и обновляет Shield Matrix (Kerio 9.5+)

@@ -3,37 +3,39 @@ package config
 import (
 	"errors"
 	"fmt" // Import fmt for error handling
+	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/spf13/viper"
 )
 
 type Config struct {
-	ScheduleTime            string // время запуска в формате HH:MM
-	IDSURL                  string
-	WebFilterAPI            string
-	BitdefenderURLs         []string
-	BitdefenderMode         string   // Режим Bitdefender: "disabled", "mirror", "proxy"
-	DatabasePath            string
-	LogPath                 string
-	RetryCount              int
-	RetryDelaySeconds       int
-	ProxyURL                string // URL прокси-сервера, если требуется
-	GeoIP4URL               string
-	GeoIP6URL               string
-	GeoLocURL               string
-	LicenseNumber           string
-	LogLevel                string   // уровень логирования: debug, info, warn, error
-	AdminToken              string   // token/password for web-admin access
-	CustomDownloadURLs      []string // Пользовательские URL для скачивания
-	EnableIDS1              bool     // Включить обновление IDS1
-	EnableIDS2              bool     // Включить обновление IDS2
-	EnableIDS3              bool     // Включить обновление IDS3
-	EnableIDS4              bool     // Включить обновление IDS4
-	EnableIDS5              bool     // Включить обновление IDS5
-	BitdefenderProxyBaseURL string   // Базовый URL для прокси Bitdefender
-	EnableSnortTemplate      bool   // Включить обновление шаблона Snort для IPS
-	SnortTemplateURL         string // URL для скачивания snort.tpl
+	ScheduleTime             string // время запуска в формате HH:MM
+	IDSURL                   string
+	WebFilterAPI             string
+	BitdefenderURLs          []string
+	BitdefenderMode          string // Режим Bitdefender: "disabled", "mirror", "proxy"
+	DatabasePath             string
+	LogPath                  string
+	RetryCount               int
+	RetryDelaySeconds        int
+	ProxyURL                 string // URL прокси-сервера, если требуется
+	GeoIP4URL                string
+	GeoIP6URL                string
+	GeoLocURL                string
+	LicenseNumber            string
+	LogLevel                 string   // уровень логирования: debug, info, warn, error
+	AdminToken               string   // token/password for web-admin access
+	CustomDownloadURLs       []string // Пользовательские URL для скачивания
+	EnableIDS1               bool     // Включить обновление IDS1
+	EnableIDS2               bool     // Включить обновление IDS2
+	EnableIDS3               bool     // Включить обновление IDS3
+	EnableIDS4               bool     // Включить обновление IDS4
+	EnableIDS5               bool     // Включить обновление IDS5
+	BitdefenderProxyBaseURL  string   // Базовый URL для прокси Bitdefender
+	EnableSnortTemplate      bool     // Включить обновление шаблона Snort для IPS
+	SnortTemplateURL         string   // URL для скачивания snort.tpl
 	EnableShieldMatrix       bool     // Включить обновление Shield Matrix (Kerio 9.5+)
 	ShieldMatrixBaseURL      string   // Базовый URL для проверки обновлений Shield Matrix (check_update endpoint)
 	ShieldMatrixClientID     string   // Client ID для Shield Matrix (по умолчанию "control")
@@ -47,6 +49,34 @@ type Config struct {
 	TelegramNotifyOnError    bool     // Send notification on component errors
 	TelegramNotifyOnSuccess  bool     // Send notification on successful update
 	TelegramNotifyOnStart    bool     // Send notification when update starts
+	WebFilterForcedKey       string   // Принудительный Web Filter ключ (env KERIO_WEBFILTER_FORCED_KEY)
+
+	licenseMu sync.RWMutex // защищает LicenseNumber при очистке невалидной лицензии
+}
+
+// GetLicenseNumber возвращает номер лицензии потокобезопасно.
+func (c *Config) GetLicenseNumber() string {
+	if c == nil {
+		return ""
+	}
+	c.licenseMu.RLock()
+	defer c.licenseMu.RUnlock()
+	return c.LicenseNumber
+}
+
+// SetLicenseNumber устанавливает номер лицензии потокобезопасно.
+func (c *Config) SetLicenseNumber(v string) {
+	if c == nil {
+		return
+	}
+	c.licenseMu.Lock()
+	defer c.licenseMu.Unlock()
+	c.LicenseNumber = v
+}
+
+// ClearLicenseNumber очищает невалидную/просроченную лицензию.
+func (c *Config) ClearLicenseNumber() {
+	c.SetLicenseNumber("")
 }
 
 func Load(path string) (*Config, error) {
@@ -98,6 +128,7 @@ func Load(path string) (*Config, error) {
 	viper.SetDefault("TELEGRAM_NOTIFY_ON_ERROR", true)
 	viper.SetDefault("TELEGRAM_NOTIFY_ON_SUCCESS", false)
 	viper.SetDefault("TELEGRAM_NOTIFY_ON_START", false)
+	viper.SetDefault("WEBFILTER_FORCED_KEY", "")
 
 	viper.AutomaticEnv()
 	if err := viper.ReadInConfig(); err != nil {
@@ -105,28 +136,28 @@ func Load(path string) (*Config, error) {
 	}
 
 	return &Config{
-		ScheduleTime:            viper.GetString("SCHEDULE_TIME"),
-		IDSURL:                  viper.GetString("IDS_URL"),
-		WebFilterAPI:            viper.GetString("WEBFILTER_API"),
-		BitdefenderMode:         viper.GetString("BITDEFENDER_MODE"),
-		DatabasePath:            viper.GetString("DATABASE_PATH"),
-		LogPath:                 viper.GetString("LOG_PATH"),
-		RetryCount:              viper.GetInt("RETRY_COUNT"),
-		RetryDelaySeconds:       viper.GetInt("RETRY_DELAY_SECONDS"),
-		ProxyURL:                viper.GetString("PROXY_URL"),
-		GeoIP4URL:               viper.GetString("GEOIP4_URL"),
-		GeoIP6URL:               viper.GetString("GEOIP6_URL"),
-		GeoLocURL:               viper.GetString("GEOLOC_URL"),
-		LicenseNumber:           viper.GetString("LICENSE_NUMBER"),
-		LogLevel:                viper.GetString("LOG_LEVEL"),
-		AdminToken:              viper.GetString("ADMIN_TOKEN"),
-		CustomDownloadURLs:      viper.GetStringSlice("CUSTOM_DOWNLOAD_URLS"),
-		EnableIDS1:              viper.GetBool("ENABLE_IDS1"),
-		EnableIDS2:              viper.GetBool("ENABLE_IDS2"),
-		EnableIDS3:              viper.GetBool("ENABLE_IDS3"),
-		EnableIDS4:              viper.GetBool("ENABLE_IDS4"),
-		EnableIDS5:              viper.GetBool("ENABLE_IDS5"),
-		BitdefenderProxyBaseURL: viper.GetString("BITDEFENDER_PROXY_BASE_URL"),
+		ScheduleTime:             viper.GetString("SCHEDULE_TIME"),
+		IDSURL:                   viper.GetString("IDS_URL"),
+		WebFilterAPI:             viper.GetString("WEBFILTER_API"),
+		BitdefenderMode:          viper.GetString("BITDEFENDER_MODE"),
+		DatabasePath:             viper.GetString("DATABASE_PATH"),
+		LogPath:                  viper.GetString("LOG_PATH"),
+		RetryCount:               viper.GetInt("RETRY_COUNT"),
+		RetryDelaySeconds:        viper.GetInt("RETRY_DELAY_SECONDS"),
+		ProxyURL:                 viper.GetString("PROXY_URL"),
+		GeoIP4URL:                viper.GetString("GEOIP4_URL"),
+		GeoIP6URL:                viper.GetString("GEOIP6_URL"),
+		GeoLocURL:                viper.GetString("GEOLOC_URL"),
+		LicenseNumber:            viper.GetString("LICENSE_NUMBER"),
+		LogLevel:                 viper.GetString("LOG_LEVEL"),
+		AdminToken:               viper.GetString("ADMIN_TOKEN"),
+		CustomDownloadURLs:       viper.GetStringSlice("CUSTOM_DOWNLOAD_URLS"),
+		EnableIDS1:               viper.GetBool("ENABLE_IDS1"),
+		EnableIDS2:               viper.GetBool("ENABLE_IDS2"),
+		EnableIDS3:               viper.GetBool("ENABLE_IDS3"),
+		EnableIDS4:               viper.GetBool("ENABLE_IDS4"),
+		EnableIDS5:               viper.GetBool("ENABLE_IDS5"),
+		BitdefenderProxyBaseURL:  viper.GetString("BITDEFENDER_PROXY_BASE_URL"),
 		EnableSnortTemplate:      viper.GetBool("ENABLE_SNORT_TEMPLATE"),
 		SnortTemplateURL:         viper.GetString("SNORT_TEMPLATE_URL"),
 		EnableShieldMatrix:       viper.GetBool("ENABLE_SHIELD_MATRIX"),
@@ -142,7 +173,17 @@ func Load(path string) (*Config, error) {
 		TelegramNotifyOnError:    viper.GetBool("TELEGRAM_NOTIFY_ON_ERROR"),
 		TelegramNotifyOnSuccess:  viper.GetBool("TELEGRAM_NOTIFY_ON_SUCCESS"),
 		TelegramNotifyOnStart:    viper.GetBool("TELEGRAM_NOTIFY_ON_START"),
+		WebFilterForcedKey:       firstNonEmpty(viper.GetString("WEBFILTER_FORCED_KEY"), os.Getenv("KERIO_WEBFILTER_FORCED_KEY")),
 	}, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func Save(cfg *Config, path string) error {
@@ -184,6 +225,7 @@ func Save(cfg *Config, path string) error {
 	viper.Set("TELEGRAM_NOTIFY_ON_ERROR", cfg.TelegramNotifyOnError)
 	viper.Set("TELEGRAM_NOTIFY_ON_SUCCESS", cfg.TelegramNotifyOnSuccess)
 	viper.Set("TELEGRAM_NOTIFY_ON_START", cfg.TelegramNotifyOnStart)
+	viper.Set("WEBFILTER_FORCED_KEY", cfg.WebFilterForcedKey)
 
 	// Set config type explicitly if file extension is missing or not supported for writing
 	ext := filepath.Ext(path)

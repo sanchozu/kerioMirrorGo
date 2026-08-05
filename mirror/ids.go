@@ -51,11 +51,11 @@ func DownloadAndUpdateIDS(conn *sql.DB, cfg *config.Config, logger *logrus.Logge
 			continue
 		}
 
-		if cfg.LicenseNumber == "" {
+		if cfg.GetLicenseNumber() == "" {
 			logger.Infof("IDSv%s: passing because license key is not configured", version)
 			continue
 		}
-		url := fmt.Sprintf(cfg.IDSURL, cfg.LicenseNumber, version)
+		url := fmt.Sprintf(cfg.IDSURL, cfg.GetLicenseNumber(), version)
 		resp, err := utils.HTTPGetWithRetry(url, cfg.RetryCount, time.Duration(cfg.RetryDelaySeconds)*time.Second, cfg.ProxyURL)
 		if err != nil {
 			logger.Errorf("IDSv%s: request error: %v", version, err)

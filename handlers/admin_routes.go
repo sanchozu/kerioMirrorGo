@@ -99,7 +99,7 @@ func settingsPageWithAuthHandler(cfg *config.Config, embeddedFiles embed.FS) ech
 			cfg.DatabasePath = c.FormValue("DatabasePath")
 			cfg.LogPath = c.FormValue("LogPath")
 			cfg.ProxyURL = c.FormValue("ProxyURL")
-			cfg.LicenseNumber = c.FormValue("LicenseNumber")
+			cfg.SetLicenseNumber(c.FormValue("LicenseNumber"))
 			cfg.WebFilterAPI = c.FormValue("WebFilterApi")
 			cfg.GeoIP4URL = c.FormValue("GeoIP4Url")
 			cfg.GeoIP6URL = c.FormValue("GeoIP6Url")
