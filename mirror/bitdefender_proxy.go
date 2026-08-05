@@ -36,6 +36,46 @@ func LinuxEnginePath(requestPath string) string {
 	return strings.Replace(requestPath, "bdcore.dll.gzip", "bdcore.so.linux-x86_64.gzip", 1)
 }
 
+// PatchBitdefenderVersions приводит manifest versions.dat в соответствие с
+// тем, что зеркало реально отдаёт Linux-клиенту: файл bdcore.dll.gzip у нас
+// содержит Linux-движок (bdcore.so.linux-x86_64), но запись "bdcore.dll" в
+// versions.dat указывает md5/размер Windows-DLL. Это вызывает ошибку
+// контрольной суммы у Kerio Control. Функция переносит md5/размер Linux-движка
+// в запись "bdcore.dll", оставляя имя файла без изменений.
+func PatchBitdefenderVersions(data []byte) []byte {
+	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+	var (
+		linuxMd5  string
+		linuxSize string
+		dllLine   = -1
+	)
+	for i, line := range lines {
+		parts := strings.Fields(line)
+		if len(parts) < 4 {
+			continue
+		}
+		switch parts[2] {
+		case "bdcore.so.linux-x86_64":
+			if linuxMd5 == "" {
+				linuxMd5, linuxSize = parts[1], parts[3]
+			}
+		case "bdcore.dll":
+			dllLine = i
+		}
+	}
+	if linuxMd5 == "" || dllLine < 0 {
+		return data
+	}
+	parts := strings.Fields(lines[dllLine])
+	if len(parts) < 4 {
+		return data
+	}
+	parts[1] = linuxMd5
+	parts[3] = linuxSize
+	lines[dllLine] = strings.Join(parts, " ")
+	return []byte(strings.Join(lines, "\n"))
+}
+
 // shouldCache проверяет, должен ли файл кэшироваться
 func shouldCache(filePath string) bool {
 	// Используем path.Base() для URL путей (не filepath.Base для файловых путей)

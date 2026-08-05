@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"bufio"
+	"bytes"
+	"compress/gzip"
 	"fmt"
 	"io"
 	"net/http"
@@ -779,6 +781,22 @@ func fallbackHandler(cfg *config.Config, logger *logrus.Logger) echo.HandlerFunc
 			if err != nil {
 				logger.Warnf("Bitdefender handler: file not found: %s", localPath)
 				return c.String(http.StatusNotFound, "404 Not found")
+			}
+			// Приводим manifest versions.dat в соответствие с отдаваемым
+			// Linux-движком (см. mirror.PatchBitdefenderVersions).
+			switch filepath.Base(filePath) {
+			case "versions.dat":
+				data = mirror.PatchBitdefenderVersions(data)
+			case "versions.dat.gz":
+				if gzr, err := gzip.NewReader(bytes.NewReader(data)); err == nil {
+					if raw, err := io.ReadAll(gzr); err == nil {
+						patched := bytes.NewBuffer(nil)
+						gzw := gzip.NewWriter(patched)
+						gzw.Write(mirror.PatchBitdefenderVersions(raw))
+						gzw.Close()
+						data = patched.Bytes()
+					}
+				}
 			}
 			contentType := http.DetectContentType(data)
 			// logger.Infof("Serving Bitdefender file: %s", localPath)
