@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"net"
-	"net/http"
 	"path"
 	"strings"
 
@@ -67,5 +66,3 @@ func normalizedHost(hostport string) string {
 	}
 	return strings.Trim(hostport, "[]")
 }
-
-var _ = http.MethodGet
