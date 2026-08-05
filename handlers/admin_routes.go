@@ -37,6 +37,7 @@ func RegisterAdminRoutes(e *echo.Echo, cfg *config.Config, logger *logrus.Logger
 	e.GET("/getkey.php", webFilterKeyHandler(cfg))
 	e.GET("/update.php", updateKerioHandler(cfg, logger))
 	e.GET("/check_update/", shieldMatrixCheckUpdateHandler(cfg, logger))
+	RegisterProtocolRoutes(e, cfg, logger)
 	e.GET("/favicon.ico", func(c echo.Context) error {
 		data, err := embeddedFiles.ReadFile("favicon.ico")
 		if err != nil {
