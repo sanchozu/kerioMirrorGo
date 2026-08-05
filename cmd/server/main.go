@@ -31,7 +31,7 @@ func main() {
 	}
 
 	logger := logging.NewLogger(cfg.LogPath, cfg.LogLevel)
-	logger.Info("Starting kerio-mirror-go v0.5.0")
+	logger.Info("Starting kerio-mirror-go v0.5.1")
 
 	if err := db.Init(cfg.DatabasePath); err != nil {
 		logger.Fatalf("DB init error: %v", err)
@@ -52,6 +52,7 @@ func main() {
 	})
 	e.Use(middleware.IPFilterMiddleware(cfg, logger))
 	handlers.RegisterAdminRoutes(e, cfg, logger, embeddedFiles)
+	handlers.RegisterDistroAdminRoutes(e, cfg, logger)
 
 	addr := serverAddressFromEnv()
 	logger.Infof("Starting HTTP server on %s", addr)
