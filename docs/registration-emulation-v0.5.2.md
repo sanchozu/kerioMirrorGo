@@ -46,12 +46,12 @@ stored in the database; on change it removes `mirror/matrix/ipv4` and
 `mirror/matrix/ipv6` and updates the DB version. Checked at most once per
 `shieldMatrixCheckTTL` (5 minutes).
 
-## Antivirus `versions.dat.gz`
+## Antivirus metadata fallback
 
-The compressed `versions.dat.gz` is intentionally served as `404` so the Kerio
-client falls back to the uncompressed `versions.dat`, which the mirror patches
-for the Linux engine. The Bitdefender signature of `versions.sig` therefore
-remains untouched.
+The compressed `versions.dat.gz` URL is intentionally served as `404`, matching
+the Kerio updater mirror behavior. The Kerio client then requests the signed,
+uncompressed `versions.dat`. The mirror does not patch, recompress, or replace
+the metadata, and `versions.sig` remains byte-for-byte untouched.
 
 ## Web Filter forced key
 

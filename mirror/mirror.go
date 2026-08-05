@@ -45,7 +45,12 @@ func Update(cfg *config.Config, logger *logrus.Logger) {
 	UpdateWebFilterKey(conn, cfg, logger)
 	// Загрузка баз Bitdefender
 	if cfg.BitdefenderMode == "mirror" {
-		downloadAndStoreBitdefender(conn, cfg.BitdefenderURLs, "mirror/bitdefender", cfg, logger)
+		// Kerio antivirus updates are client-driven. The link handler obtains
+		// the licensed Kerio CDN and the file handler caches the exact signed
+		// paths requested by the client (including /v2/repository/...). Do not
+		// prefetch the public Bitdefender catalog: it can contain the Windows
+		// engine and is not the repository authorized for Kerio Control.
+		logger.Info("Bitdefender mirror mode: using on-demand Kerio CDN cache")
 	} else if cfg.BitdefenderMode == "proxy" {
 		// В proxy mode выполняем только очистку старых версий
 		currentVersion := db.GetBitdefenderVersion(conn)

@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"bytes"
-	"compress/gzip"
 	"crypto/rand"
 	"database/sql"
 	"encoding/json"
@@ -194,18 +193,31 @@ func cachedVendorFileHandler(cfg *config.Config, logger *logrus.Logger, service 
 			_ = removeVersionSiblings(filepath.Dir(local))
 		}
 		if info, err := os.Stat(local); err != nil || !info.Mode().IsRegular() {
+			// Kerio's updater expects a 404 for the historical compressed
+			// metadata URL and then retries the signed, uncompressed
+			// versions.dat. Do not synthesize a new gzip stream: changing the
+			// transport wrapper can make older SDKs reject the metadata.
+			if service == "antivirus" && strings.EqualFold(path.Base(rel), "versions.dat.gz") {
+				_ = os.Remove(local)
+				return c.String(http.StatusNotFound, "404 Not Found")
+			}
 			headers := map[string]string{"Accept": "*/*", "Connection": "Keep-Alive"}
 			if service == "antivirus" {
 				headers["User-Agent"] = "WSLib 1.4 [3, 0, 0, 94]"
+				if parsed, parseErr := url.Parse(upstream); parseErr == nil && parsed.Host != "" {
+					headers["Host"] = parsed.Host
+				}
 			} else {
 				headers["User-Agent"] = "WSLib 1.4 [3, 0, 0, 317]"
 			}
 			remote := strings.TrimRight(upstream, "/") + "/" + strings.TrimLeft(filepath.ToSlash(rel), "/")
-			if err := downloadAtomic(cfg, remote, local, headers); err != nil && strings.HasSuffix(strings.ToLower(rel), ".gzip") && strings.Contains(err.Error(), "upstream status 404") {
-				err = downloadGzipFallbackAtomic(cfg, remote, local, headers)
-			}
-			if err != nil {
-				logger.Warnf("%s cache fetch failed for %s: %v", service, rel, err)
+			downloadErr := downloadAtomic(cfg, remote, local, headers)
+			if downloadErr != nil {
+				if strings.Contains(downloadErr.Error(), "upstream status 404") {
+					logger.Debugf("%s upstream does not contain %s", service, rel)
+					return c.String(http.StatusNotFound, "404 Not Found")
+				}
+				logger.Warnf("%s cache fetch failed for %s: %v", service, rel, downloadErr)
 				return c.String(http.StatusBadGateway, "502 Bad Gateway")
 			}
 			if service == "antivirus" && mirror.IsBitdefenderEngineArchive(rel) {
@@ -585,6 +597,10 @@ func upstreamResponse(cfg *config.Config, method, target string, body []byte, he
 		}
 		for k, v := range headers {
 			if v != "" {
+				if strings.EqualFold(k, "Host") {
+					req.Host = v
+					continue
+				}
 				req.Header.Set(k, v)
 			}
 		}
@@ -611,30 +627,6 @@ func downloadAtomic(cfg *config.Config, target, destination string, headers map[
 		return fmt.Errorf("upstream status %d", status)
 	}
 	return writeAtomicBytes(destination, data)
-}
-
-// downloadGzipFallbackAtomic is used by the Kerio CDN, which serves a few
-// signed update files only in their uncompressed form. The payload is kept
-// byte-for-byte intact; only its transport wrapper is regenerated for clients
-// that request the historical .gzip URL.
-func downloadGzipFallbackAtomic(cfg *config.Config, target, destination string, headers map[string]string) error {
-	plainTarget := strings.TrimSuffix(target, ".gzip")
-	data, status, err := upstreamBytes(cfg, http.MethodGet, plainTarget, nil, headers)
-	if err != nil {
-		return err
-	}
-	if status != http.StatusOK {
-		return fmt.Errorf("upstream fallback status %d", status)
-	}
-	var compressed bytes.Buffer
-	zw := gzip.NewWriter(&compressed)
-	if _, err := zw.Write(data); err != nil {
-		return err
-	}
-	if err := zw.Close(); err != nil {
-		return err
-	}
-	return writeAtomicBytes(destination, compressed.Bytes())
 }
 
 func writeAtomicBytes(destination string, data []byte) error {

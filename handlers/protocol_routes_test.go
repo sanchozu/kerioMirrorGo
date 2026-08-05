@@ -202,3 +202,21 @@ func TestCachedVendorFileWithoutDiscoveredCDNForbidden(t *testing.T) {
 		t.Errorf("Expected status 403, got %d", rec.Code)
 	}
 }
+
+func TestCachedVendorFileVersionsDatGzipUsesClientFallback(t *testing.T) {
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/kerio/updates/antivirus/files/v2/repository/abc/versions.dat.gz", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("*")
+	c.SetParamValues("v2/repository/abc/versions.dat.gz")
+
+	cfg := &config.Config{BitdefenderMode: "proxy"}
+	cfg.SetKerioCDN("https://bdupdate-cdn.kerio.com/repository")
+	if err := cachedVendorFileHandler(cfg, logrus.New(), "antivirus")(c); err != nil {
+		t.Fatalf("Handler returned error: %v", err)
+	}
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("Expected status 404 for compressed metadata fallback, got %d", rec.Code)
+	}
+}
