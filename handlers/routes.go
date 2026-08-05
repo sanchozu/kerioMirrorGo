@@ -128,7 +128,7 @@ func getDashboardStatus(cfg *config.Config) (*DashboardStatus, error) {
 
 	return &DashboardStatus{
 		ServiceName:          "Kerio Mirror Go",
-		Version:              "v0.5.8",
+		Version:              "v0.5.9",
 		CurrentTime:          time.Now().Format("2006-01-02 15:04:05 MST"),
 		Config:               cfg,
 		IDSVersions:          idsVersions,

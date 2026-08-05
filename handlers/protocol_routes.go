@@ -698,6 +698,7 @@ func downloadLegacyKerioFileAtomic(cfg *config.Config, upstream, rel, destinatio
 	} else {
 		localPath = strings.TrimSuffix(path.Base(clean), ".gzip")
 	}
+	localPath = strings.TrimSuffix(localPath, ".gzip")
 	for _, file := range manifest.Files {
 		if file.LocalPath != localPath || file.URL == "" {
 			continue
