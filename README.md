@@ -244,12 +244,29 @@ Shield Matrix використовується Kerio Control 9.5+.
 3. Завантаження threat data файлів IPv4/IPv6 on-demand або через preload.
 4. Кешування файлів у `mirror/matrix/`.
 
+Під час запиту файлу зеркало порівнює upstream-версію з версією у БД (`mirror.CheckAndPurgeShieldMatrixCache`). Якщо версія змінилась, кеш `mirror/matrix/ipv4` і `ipv6` очищається, щоб не віддавати застарілі дані.
+
 Режими завантаження:
 
 | Режим | Значення `SHIELD_MATRIX_PRELOAD_FILES` | Коли використовувати |
 |-------|----------------------------------------|----------------------|
 | On-demand | `false` | Звичайний інтернет, мінімальне сховище. |
 | Preload | `true` | Повільний або обмежений інтернет, offline-сценарії. |
+
+## Registration emulation
+
+Реєстрація Kerio Control виконується повністю локально (без `register.kerio.com`), увімкнена за замовчуванням. Підтримуються команди `connect`, `lookup`, `readinfo`, `stored`; відповіді повертають `users: UNLIMITED` та ліцензію з терміном +30 днів.
+
+| Variable | Default | Опис |
+|---|---:|---|
+| `KERIO_REGISTRATION_EMULATION` | `true` | Локальна емуляція реєстрації замість proxy у офіційний сервіс |
+| `KERIO_REGISTRATION_FORCE_UNLIMITED` | `true` | Повертати `users: UNLIMITED` у `lookup`/`readinfo` |
+
+При невалідній/просроченій ліцензії CDN зеркало очищає ключ ліцензії та надсилає сповіщення у Telegram (якщо увімкнено). Докладніше — у `docs/registration-emulation-v0.5.2.md`.
+
+## Web Filter forced key
+
+За замовчуванням Web Filter ключ отримується з `wf-activation.kerio.com`. Для офлайн/примусового сценарію можна задати `KERIO_WEBFILTER_FORCED_KEY` (або `WEBFILTER_FORCED_KEY` у конфігу): тоді ключ береться з конфігурації без звернення до апстриму.
 
 ## IP Access Control
 

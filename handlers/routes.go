@@ -217,7 +217,7 @@ func settingsPageHandler(cfg *config.Config, embeddedFiles embed.FS) echo.Handle
 			cfg.DatabasePath = c.FormValue("DatabasePath")
 			cfg.LogPath = c.FormValue("LogPath")
 			cfg.ProxyURL = c.FormValue("ProxyURL")
-			cfg.LicenseNumber = c.FormValue("LicenseNumber")
+			cfg.SetLicenseNumber(c.FormValue("LicenseNumber"))
 			cfg.WebFilterAPI = c.FormValue("WebFilterApi")
 			cfg.GeoIP4URL = c.FormValue("GeoIP4Url")
 			cfg.GeoIP6URL = c.FormValue("GeoIP6Url")
@@ -520,7 +520,7 @@ func webFilterKeyHandler(cfg *config.Config) echo.HandlerFunc {
 			return c.String(http.StatusInternalServerError, "Internal Server Error")
 		}
 		logger.Infof("Web access: %s %s from %s", c.Request().Method, c.Request().URL.Path, c.RealIP())
-		if cfg.LicenseNumber == "" {
+		if cfg.GetLicenseNumber() == "" {
 			return c.String(http.StatusNotFound, "404 Not found")
 		}
 		conn, err := sql.Open("sqlite", cfg.DatabasePath)
@@ -529,10 +529,7 @@ func webFilterKeyHandler(cfg *config.Config) echo.HandlerFunc {
 		}
 		defer conn.Close()
 
-		key, err := db.GetWebfilterKey(conn, cfg.LicenseNumber)
-		if err != nil {
-			return c.String(http.StatusInternalServerError, "500 Internal Server Error")
-		}
+		key := mirror.GetWebFilterKey(cfg, conn)
 		if key == "" {
 			return c.String(http.StatusNotFound, "404 Not found")
 		}

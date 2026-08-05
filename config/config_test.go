@@ -141,3 +141,34 @@ func TestLoadUnsupportedFormat(t *testing.T) {
 		t.Error("Expected error for unsupported config format, got nil")
 	}
 }
+
+func TestLicenseAccessors(t *testing.T) {
+	cfg := &Config{}
+	cfg.SetLicenseNumber("LIC-1234")
+	if got := cfg.GetLicenseNumber(); got != "LIC-1234" {
+		t.Errorf("GetLicenseNumber() = %q, want %q", got, "LIC-1234")
+	}
+	cfg.ClearLicenseNumber()
+	if got := cfg.GetLicenseNumber(); got != "" {
+		t.Errorf("GetLicenseNumber() after clear = %q, want empty", got)
+	}
+}
+
+func TestLoadWebFilterForcedKeyFromEnv(t *testing.T) {
+	// viper.AutomaticEnv caches values; force a fresh read via a temp file.
+	tmpFile, err := os.CreateTemp("", "config_forced_key_*.yaml")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	tmpFile.Close()
+
+	t.Setenv("KERIO_WEBFILTER_FORCED_KEY", "FORCED-ENV-KEY")
+	cfg, err := Load(tmpFile.Name())
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+	if cfg.WebFilterForcedKey != "FORCED-ENV-KEY" {
+		t.Errorf("WebFilterForcedKey = %q, want %q", cfg.WebFilterForcedKey, "FORCED-ENV-KEY")
+	}
+}

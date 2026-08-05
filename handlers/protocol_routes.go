@@ -3,11 +3,13 @@ package handlers
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/rand"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -22,6 +24,7 @@ import (
 	"kerio-mirror-go/config"
 	"kerio-mirror-go/db"
 	"kerio-mirror-go/mirror"
+	"kerio-mirror-go/telegram"
 	"kerio-mirror-go/utils"
 
 	"github.com/labstack/echo/v4"
@@ -104,7 +107,7 @@ func geoIPLinkHandler(cfg *config.Config, logger *logrus.Logger) echo.HandlerFun
 		if major == 4 {
 			return idsLinkHandler(cfg, logger)(c)
 		}
-		if major != 5 || cfg.LicenseNumber == "" {
+		if major != 5 || cfg.GetLicenseNumber() == "" {
 			return c.String(http.StatusNotFound, "404 Not found")
 		}
 
@@ -113,7 +116,7 @@ func geoIPLinkHandler(cfg *config.Config, logger *logrus.Logger) echo.HandlerFun
 			return c.String(http.StatusInternalServerError, "500 Internal Server Error")
 		}
 		q := upstream.Query()
-		q.Set("id", cfg.LicenseNumber)
+		q.Set("id", cfg.GetLicenseNumber())
 		q.Set("version", c.QueryParam("version"))
 		q.Set("tag", c.QueryParam("tag"))
 		upstream.RawQuery = q.Encode()
@@ -153,7 +156,13 @@ func antivirusLinkHandler(cfg *config.Config, logger *logrus.Logger) echo.Handle
 		if strings.Contains(base, "bdupdate.kerio.com") {
 			cdn, err := discoverKerioCDN(cfg, c.QueryParam("version"))
 			if err != nil {
-				logger.Warnf("Kerio CDN discovery failed: %v", err)
+				if errors.Is(err, errCDNLicenseInvalid) {
+					license := cfg.GetLicenseNumber()
+					cfg.ClearLicenseNumber()
+					notifyCDNError(cfg, logger, "license %s invalid or expired, Kerio CDN updates disabled: %v", license, err)
+				} else {
+					notifyCDNError(cfg, logger, "CDN discovery failed for version %q: %v", c.QueryParam("version"), err)
+				}
 				return c.String(http.StatusBadGateway, "502 Bad Gateway")
 			}
 			base = cdn
@@ -176,6 +185,13 @@ func cachedVendorFileHandler(cfg *config.Config, logger *logrus.Logger, service 
 		rel := strings.TrimPrefix(c.Param("*"), "/")
 		if rel == "" {
 			return c.String(http.StatusBadRequest, "400 Bad Request")
+		}
+		// Сжатый versions.dat.gz намеренно не отдаём (404): клиент Kerio
+		// откатится на распакованный versions.dat, который зеркало патчит
+		// под Linux-движок. Подпись versions.sig при этом остаётся валидной.
+		if path.Base(rel) == "versions.dat.gz" {
+			logger.Debugf("%s: skipping compressed versions.dat.gz for %q (forcing uncompressed fallback)", service, rel)
+			return c.String(http.StatusNotFound, "404 Not found")
 		}
 		upstream := vendorUpstream(cfg, service)
 		if service == "antivirus" {
@@ -269,6 +285,12 @@ func shieldMatrixCanonicalFileHandler(cfg *config.Config, logger *logrus.Logger)
 		if !strings.HasPrefix(rel, "ipv4/") && !strings.HasPrefix(rel, "ipv6/") {
 			return c.String(http.StatusBadRequest, "400 Bad Request")
 		}
+		// Если upstream-версия изменилась, старые файлы (предыдущей версии)
+		// очищаются, чтобы не отдавать устаревшие данные из кэша.
+		if conn, dbErr := sql.Open("sqlite", cfg.DatabasePath); dbErr == nil {
+			mirror.CheckAndPurgeShieldMatrixCache(conn, cfg, logger)
+			_ = conn.Close()
+		}
 		local, err := safeJoin(filepath.Join("mirror", "matrix"), filepath.FromSlash(rel))
 		if err != nil {
 			return c.String(http.StatusForbidden, "403 Forbidden")
@@ -340,6 +362,9 @@ func distroFileHandler() echo.HandlerFunc {
 
 func registrationProxyHandler(cfg *config.Config, logger *logrus.Logger) echo.HandlerFunc {
 	return func(c echo.Context) error {
+		if envBool("KERIO_REGISTRATION_EMULATION", true) {
+			return emulateRegistrationHandler(c, cfg, logger)
+		}
 		if !envBool("KERIO_REGISTRATION_PROXY", true) {
 			return c.String(http.StatusNotFound, "404 Not found")
 		}
@@ -358,6 +383,163 @@ func registrationProxyHandler(cfg *config.Config, logger *logrus.Logger) echo.Ha
 	}
 }
 
+// emulateRegistrationHandler обрабатывает команды протокола регистрации Kerio
+// полностью локально (без обращения к register.kerio.com). Включено через
+// KERIO_REGISTRATION_EMULATION=true (по умолчанию true).
+func emulateRegistrationHandler(c echo.Context, cfg *config.Config, logger *logrus.Logger) error {
+	if c.Request().Method == http.MethodHead {
+		c.Response().Header().Set("X-Kerio-Token", "")
+		c.Response().Header().Set("X-Kerio-Reply-Code", "500")
+		c.Response().Header().Set("X-Kerio-Reply-Message", "Internal Server Error")
+		return c.String(http.StatusOK, "")
+	}
+	command := strings.ToLower(strings.TrimSpace(c.FormValue("command")))
+	baseID := c.FormValue("base_id")
+	token := c.FormValue("token")
+	logger.Debugf("Registration emulation: command=%q base_id=%q", command, baseID)
+	switch command {
+	case "connect":
+		return emulateRegistrationConnect(c, cfg, logger)
+	case "lookup":
+		return emulateRegistrationLookup(c, logger, baseID, token)
+	case "readinfo":
+		return emulateRegistrationReadinfo(c, logger, baseID, token)
+	case "stored":
+		return emulateRegistrationStored(c, logger, baseID, token)
+	default:
+		logger.Warnf("Registration emulation: unknown command %q", command)
+		return c.String(http.StatusOK, "")
+	}
+}
+
+// emulateRegistrationConnect возвращает капчу регистрации (из локального кэша
+// либо скачанную с register.kerio.com). Если капча недоступна — пустой ответ
+// с кодом 500 в заголовке (клиент повторяет запрос).
+func emulateRegistrationConnect(c echo.Context, cfg *config.Config, logger *logrus.Logger) error {
+	captchaPath := filepath.Join("mirror", "registration", "security_image")
+	data, err := os.ReadFile(captchaPath)
+	valid := err == nil && len(data) > 1000 &&
+		bytes.Contains(data, []byte("security_image")) &&
+		bytes.Contains(data, []byte("image_signature")) &&
+		bytes.Contains(data, []byte("show_image"))
+	if !valid {
+		logger.Info("Registration emulation: captcha missing, fetching from register.kerio.com")
+		data, err = fetchRegistrationCaptcha(cfg)
+		if err != nil || len(data) <= 1000 {
+			logger.Warn("Registration emulation: captcha unavailable, returning internal error")
+			c.Response().Header().Set("X-Kerio-Token", "")
+			c.Response().Header().Set("X-Kerio-Reply-Code", "500")
+			c.Response().Header().Set("X-Kerio-Reply-Message", "Internal Server Error")
+			return c.String(http.StatusOK, "")
+		}
+		if mkErr := os.MkdirAll(filepath.Dir(captchaPath), 0o755); mkErr == nil {
+			if writeErr := os.WriteFile(captchaPath, data, 0o644); writeErr != nil {
+				logger.Warnf("Registration emulation: failed to cache captcha: %v", writeErr)
+			}
+		}
+	}
+	c.Response().Header().Set("X-Kerio-Token", "ac561fb1a7c3627c62f561db9bdebba8")
+	c.Response().Header().Set("X-Kerio-Reply-Code", "200")
+	c.Response().Header().Set("X-Kerio-Reply-Message", "OK")
+	return c.Blob(http.StatusOK, "application/x-kerio-signed-png", data)
+}
+
+// emulateRegistrationLookup возвращает лицензионные данные Kerio Control.
+func emulateRegistrationLookup(c echo.Context, logger *logrus.Logger, baseID, token string) error {
+	expiry := time.Now().AddDate(0, 0, 30).Format("2006-01-02")
+	users := "Kerio Control server"
+	if envBool("KERIO_REGISTRATION_FORCE_UNLIMITED", true) {
+		users = "UNLIMITED"
+	}
+	body := fmt.Sprintf("base_id: %s\ntype: Server\nusers: %s\nexpires: %s\ntotal_users: UNLIMITED\nedu_version: 0\nextensions: Kerio Antivirus for Kerio Control server,Kerio Web Filter server\nlicense_update: 0\nproduct: Kerio Control\ncompany: GFI Software\nreg_type: TRIAL\ndwn_trial_expires: %s\n", baseID, users, expiry, expiry)
+	logger.Infof("Registration emulation: lookup for base_id=%q (users=%s, expires=%s)", baseID, users, expiry)
+	c.Response().Header().Set("X-Kerio-Token", token)
+	c.Response().Header().Set("X-Kerio-Reply-Code", "200")
+	c.Response().Header().Set("X-Kerio-Reply-Message", "OK")
+	c.Response().Header().Set("Content-Type", "application/x-kerio-registration")
+	return c.String(http.StatusOK, body)
+}
+
+// emulateRegistrationReadinfo возвращает профиль регистрации Kerio Control.
+func emulateRegistrationReadinfo(c echo.Context, logger *logrus.Logger, baseID, token string) error {
+	expiry := time.Now().AddDate(0, 0, 30).Format("2006-01-02")
+	users := "Kerio Control server"
+	if envBool("KERIO_REGISTRATION_FORCE_UNLIMITED", true) {
+		users = "UNLIMITED"
+	}
+	body := "company:\nperson:\naddress:\ncity:\nzipcode:\ncountry:\nphone:\nemail:\nwebsite:\nos: 2\nlang_id: en\ncomment:\neduinfo:\nstate:\nico:\nserialnumber:\nreseller_company:\nreseller_address:\nreseller_city:\nreseller_phone:\nreseller_email:\n" +
+		fmt.Sprintf("expires: %s\n", expiry) +
+		fmt.Sprintf("users: %s\n", users) +
+		fmt.Sprintf("addon_list[]: %s;Server;Kerio Control server\n", baseID) +
+		"show_questions: 0"
+	logger.Infof("Registration emulation: readinfo for base_id=%q", baseID)
+	c.Response().Header().Set("X-Kerio-Token", token)
+	c.Response().Header().Set("X-Kerio-Reply-Code", "200")
+	c.Response().Header().Set("X-Kerio-Reply-Message", "OK, registration data follows")
+	c.Response().Header().Set("Content-Type", "application/x-kerio-registration")
+	return c.String(http.StatusOK, body)
+}
+
+// emulateRegistrationStored подтверждает сохранение base_id.
+func emulateRegistrationStored(c echo.Context, logger *logrus.Logger, baseID, token string) error {
+	logger.Infof("Registration emulation: stored base_id=%q", baseID)
+	c.Response().Header().Set("X-Kerio-Token", token)
+	c.Response().Header().Set("X-Kerio-Reply-Code", "200")
+	c.Response().Header().Set("X-Kerio-Reply-Message", "OK, verified")
+	return c.String(http.StatusOK, fmt.Sprintf("base_id: %s", baseID))
+}
+
+// fetchRegistrationCaptcha скачивает капчу регистрации с register.kerio.com
+// (формат multipart, как в референсной Python-реализации).
+func fetchRegistrationCaptcha(cfg *config.Config) ([]byte, error) {
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	fields := map[string]string{
+		"command":          "connect",
+		"host_id":          randomMAC(),
+		"product_code":     "KWF",
+		"type":             "image/png",
+		"protocol_version": "21",
+		"lang_id":          "",
+		"show_image":       "0",
+		"product_version":  "0.0.0..0",
+	}
+	for key, value := range fields {
+		if err := writer.WriteField(key, value); err != nil {
+			return nil, err
+		}
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	body, status, err := upstreamBytes(cfg, http.MethodPost, "https://register.kerio.com/registration/LD.php", buf.Bytes(), map[string]string{
+		"Content-Type": writer.FormDataContentType(),
+		"User-Agent":   "Kerio License Downloader (LicenseManager)",
+		"Accept":       "*/*",
+	})
+	if err != nil {
+		return nil, err
+	}
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("captcha upstream status %d", status)
+	}
+	return body, nil
+}
+
+// randomMAC генерирует случайный unicast MAC-адрес в формате XX:XX:XX:XX:XX:XX.
+func randomMAC() string {
+	raw := make([]byte, 6)
+	if _, err := rand.Read(raw); err != nil {
+		raw = []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05}
+	}
+	raw[0] &= 0xFE
+	parts := make([]string, 6)
+	for i := 0; i < 6; i++ {
+		parts[i] = fmt.Sprintf("%02X", raw[i])
+	}
+	return strings.Join(parts, ":")
+}
+
 func vendorUpstream(cfg *config.Config, service string) string {
 	if service == "antispam" {
 		if v := strings.TrimSpace(os.Getenv("KERIO_ANTISPAM_UPSTREAM")); v != "" {
@@ -374,28 +556,45 @@ func vendorUpstream(cfg *config.Config, service string) string {
 	return "https://upgrade.bitdefender.com"
 }
 
+var errCDNLicenseInvalid = errors.New("Kerio CDN: invalid or expired product license")
+
 func discoverKerioCDN(cfg *config.Config, version string) (string, error) {
-	if cfg.LicenseNumber == "" {
+	if cfg.GetLicenseNumber() == "" {
 		return "", errors.New("license number is missing")
 	}
 	u, _ := url.Parse("https://bdupdate.kerio.com/update.php")
 	q := u.Query()
-	q.Set("id", cfg.LicenseNumber)
+	q.Set("id", cfg.GetLicenseNumber())
 	q.Set("product", "KWF")
 	q.Set("version", version)
 	u.RawQuery = q.Encode()
 	body, status, err := upstreamBytes(cfg, http.MethodGet, u.String(), nil, map[string]string{"Host": "bdupdate.kerio.com", "User-Agent": "Kerio Updater"})
-	if err != nil || status != http.StatusOK {
-		return "", fmt.Errorf("CDN lookup failed: %w", err)
+	if err != nil {
+		return "", fmt.Errorf("CDN lookup failed (network error): %w", err)
+	}
+	if status != http.StatusOK {
+		return "", fmt.Errorf("CDN lookup failed (HTTP %d): %s", status, strings.TrimSpace(string(body)))
 	}
 	text := strings.TrimSpace(string(body))
 	if strings.Contains(text, "Invalid product license") || strings.Contains(text, "Maintenance expired") {
-		return "", errors.New(text)
+		return "", fmt.Errorf("%w (%s)", errCDNLicenseInvalid, text)
 	}
 	if !strings.HasPrefix(text, "THDdir=") {
 		return "", fmt.Errorf("unexpected CDN response: %s", text)
 	}
 	return strings.TrimRight(strings.TrimPrefix(text, "THDdir="), "/"), nil
+}
+
+// notifyCDNError логирует ошибку CDN и отправляет уведомление в Telegram,
+// если включены уведомления об ошибках.
+func notifyCDNError(cfg *config.Config, logger *logrus.Logger, format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
+	logger.Errorf("Antivirus CDN: %s", msg)
+	if cfg.TelegramNotifyOnError {
+		if err := telegram.New(cfg).NotifyError("Antivirus CDN error: " + msg); err != nil {
+			logger.Warnf("Telegram notification failed: %v", err)
+		}
+	}
 }
 
 func upstreamBytes(cfg *config.Config, method, target string, body []byte, headers map[string]string) ([]byte, int, error) {
@@ -596,10 +795,18 @@ func compareVersion(a, b string) int {
 	aa, bb := versionNumbers(a), versionNumbers(b)
 	for i := 0; i < maxInt(len(aa), len(bb)); i++ {
 		av, bv := 0, 0
-		if i < len(aa) { av = aa[i] }
-		if i < len(bb) { bv = bb[i] }
-		if av < bv { return -1 }
-		if av > bv { return 1 }
+		if i < len(aa) {
+			av = aa[i]
+		}
+		if i < len(bb) {
+			bv = bb[i]
+		}
+		if av < bv {
+			return -1
+		}
+		if av > bv {
+			return 1
+		}
 	}
 	return 0
 }
@@ -617,7 +824,9 @@ func copyResponseHeaders(dst, src http.Header) {
 }
 
 func maxInt(a, b int) int {
-	if a > b { return a }
+	if a > b {
+		return a
+	}
 	return b
 }
 

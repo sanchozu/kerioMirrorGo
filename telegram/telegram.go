@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	maxRetries    = 3
-	retryDelay    = 3 * time.Second
+	maxRetries = 3
+	retryDelay = 3 * time.Second
 )
 
 // Notifier sends notifications to a Telegram chat via Bot API.
