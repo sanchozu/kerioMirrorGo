@@ -22,31 +22,26 @@ import (
 var embeddedFiles embed.FS
 
 func main() {
-	// Parse config path
 	cfgPath := flag.String("config", "config.yaml", "Path to config file")
 	flag.Parse()
 
-	// Load config
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	// Init logger
 	logger := logging.NewLogger(cfg.LogPath, cfg.LogLevel)
-	logger.Info("Starting kerio-mirror-go")
+	logger.Info("Starting kerio-mirror-go v0.5.0")
 
-	// Init DB
 	if err := db.Init(cfg.DatabasePath); err != nil {
 		logger.Fatalf("DB init error: %v", err)
 	}
 
-	// Start scheduled mirror
 	go mirror.StartScheduler(cfg, logger)
 
-	// Setup HTTP server
 	e := echo.New()
-	// Inject config and logger into context for all handlers
+	// Rewrites DNS-intercepted Kerio hostnames before Echo selects a route.
+	e.Pre(middleware.HostRouterMiddleware())
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			c.Set("config", cfg)
@@ -55,7 +50,6 @@ func main() {
 			return next(c)
 		}
 	})
-	// Add IP filter middleware
 	e.Use(middleware.IPFilterMiddleware(cfg, logger))
 	handlers.RegisterAdminRoutes(e, cfg, logger, embeddedFiles)
 
