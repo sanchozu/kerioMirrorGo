@@ -24,6 +24,18 @@ var nonCacheableFiles = []string{
 	"cumulative.txt", // Кумулятивная информация
 }
 
+// LinuxEnginePath возвращает путь к Linux-движку Bitdefender, если клиент
+// запросил движок bdcore.dll.gzip. Kerio Control (Linux) запрашивает движок
+// по пути avx/bdcore.dll.gzip, но сервер обновлений Kerio отдаёт по этому
+// пути Linux-движок (bdcore.so.linux-x86_64.gzip). Публичный CDN Bitdefender
+// хранит там настоящую Windows-DLL, поэтому подставляем Linux-движок.
+func LinuxEnginePath(requestPath string) string {
+	if path.Base(requestPath) != "bdcore.dll.gzip" {
+		return ""
+	}
+	return strings.Replace(requestPath, "bdcore.dll.gzip", "bdcore.so.linux-x86_64.gzip", 1)
+}
+
 // shouldCache проверяет, должен ли файл кэшироваться
 func shouldCache(filePath string) bool {
 	// Используем path.Base() для URL путей (не filepath.Base для файловых путей)
@@ -63,6 +75,14 @@ func BitdefenderProxyHandler(cfg *config.Config, logger *logrus.Logger) echo.Han
 
 		// Формируем путь к локальному кэшированному файлу
 		localPath := filepath.Join("mirror/bitdefender", filepath.Clean(requestPath))
+
+		// Kerio Control (Linux) запрашивает движок как bdcore.dll.gzip, но
+		// ожидает по этому пути Linux-движок. Подставляем Linux-движок и для
+		// локального кэша, и для запроса на удалённый сервер.
+		if enginePath := LinuxEnginePath(requestPath); enginePath != "" {
+			localPath = filepath.Join("mirror/bitdefender", filepath.Clean(enginePath))
+			requestPath = enginePath
+		}
 
 		// Проверка на path traversal
 		absBase, err := filepath.Abs("mirror/bitdefender")

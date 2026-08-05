@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"kerio-mirror-go/config"
+	"kerio-mirror-go/mirror"
 
 	"github.com/labstack/echo/v4"
 	"github.com/sirupsen/logrus"
@@ -213,6 +214,24 @@ func TestWebFilterKeyHandler_NoLicense(t *testing.T) {
 	}
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("Expected status 404, got %d", rec.Code)
+	}
+}
+
+func TestLinuxEnginePath(t *testing.T) {
+	tests := []struct {
+		requestPath string
+		expected    string
+	}{
+		{"av64bit_97275/avx/bdcore.dll.gzip", "av64bit_97275/avx/bdcore.so.linux-x86_64.gzip"},
+		{"av64bit/avx/bdcore.dll.gzip", "av64bit/avx/bdcore.so.linux-x86_64.gzip"},
+		{"av64bit_97275/avx/Plugins/emalware.114.gzip", ""},
+		{"av64bit_97275/avx/bdcore.so.linux-x86_64.gzip", ""},
+		{"", ""},
+	}
+	for _, tc := range tests {
+		if got := mirror.LinuxEnginePath(tc.requestPath); got != tc.expected {
+			t.Errorf("LinuxEnginePath(%q) = %q, want %q", tc.requestPath, got, tc.expected)
+		}
 	}
 }
 

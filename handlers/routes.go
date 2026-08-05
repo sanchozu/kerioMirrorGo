@@ -29,20 +29,20 @@ import (
 
 // DashboardStatus holds info for the dashboard page
 type DashboardStatus struct {
-	ServiceName           string
-	CurrentTime           string
-	Config                *config.Config
-	IDSVersions           map[string]int
-	IDSSuccess            map[string]bool // успешность по каждой IDS
-	BitdefenderVer        int
-	BitdefenderSuccess    bool   // успешность Bitdefender
-	SnortTemplateSuccess  bool   // успешность Snort Template
-	ShieldMatrixVersion   string // версия Shield Matrix
-	ShieldMatrixSuccess   bool   // успешность Shield Matrix
-	LastUpdate            string
-	ActiveComponents      int // количество активных компонентов
-	SuccessfulComponents  int // количество успешно обновленных компонентов
-	HealthPercentage      int // процент здоровья системы (0-100)
+	ServiceName          string
+	CurrentTime          string
+	Config               *config.Config
+	IDSVersions          map[string]int
+	IDSSuccess           map[string]bool // успешность по каждой IDS
+	BitdefenderVer       int
+	BitdefenderSuccess   bool   // успешность Bitdefender
+	SnortTemplateSuccess bool   // успешность Snort Template
+	ShieldMatrixVersion  string // версия Shield Matrix
+	ShieldMatrixSuccess  bool   // успешность Shield Matrix
+	LastUpdate           string
+	ActiveComponents     int // количество активных компонентов
+	SuccessfulComponents int // количество успешно обновленных компонентов
+	HealthPercentage     int // процент здоровья системы (0-100)
 }
 
 func getDashboardStatus(cfg *config.Config) (*DashboardStatus, error) {
@@ -766,6 +766,9 @@ func fallbackHandler(cfg *config.Config, logger *logrus.Logger) echo.HandlerFunc
 				return c.String(http.StatusBadRequest, "400 Bad Request")
 			}
 			localPath := filepath.Join("mirror/bitdefender", filepath.Clean(filePath))
+			if enginePath := mirror.LinuxEnginePath(filePath); enginePath != "" {
+				localPath = filepath.Join("mirror/bitdefender", filepath.Clean(enginePath))
+			}
 			absBase, _ := filepath.Abs("mirror/bitdefender")
 			absFile, _ := filepath.Abs(localPath)
 			if !strings.HasPrefix(absFile, absBase) {
