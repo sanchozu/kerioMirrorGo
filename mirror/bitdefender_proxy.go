@@ -1,6 +1,8 @@
 package mirror
 
 import (
+	"bytes"
+	"compress/gzip"
 	"fmt"
 	"io"
 	"net/http"
@@ -74,6 +76,39 @@ func PatchBitdefenderVersions(data []byte) []byte {
 	parts[3] = linuxSize
 	lines[dllLine] = strings.Join(parts, " ")
 	return []byte(strings.Join(lines, "\n"))
+}
+
+// servePatchedVersion отдаёт versions.dat / versions.dat.gz с приведённым
+// манифестом (см. PatchBitdefenderVersions). Возвращает false, если файл не
+// относится к версиям или его не удалось прочитать/распаковать.
+func servePatchedVersion(c echo.Context, localPath, requestPath string) bool {
+	switch path.Base(requestPath) {
+	case "versions.dat":
+		data, err := os.ReadFile(localPath)
+		if err != nil {
+			return false
+		}
+		return c.Blob(http.StatusOK, http.DetectContentType(data), PatchBitdefenderVersions(data)) == nil
+	case "versions.dat.gz":
+		data, err := os.ReadFile(localPath)
+		if err != nil {
+			return false
+		}
+		gzr, err := gzip.NewReader(bytes.NewReader(data))
+		if err != nil {
+			return false
+		}
+		raw, err := io.ReadAll(gzr)
+		if err != nil {
+			return false
+		}
+		var buf bytes.Buffer
+		gzw := gzip.NewWriter(&buf)
+		gzw.Write(PatchBitdefenderVersions(raw))
+		gzw.Close()
+		return c.Blob(http.StatusOK, "application/gzip", buf.Bytes()) == nil
+	}
+	return false
 }
 
 // shouldCache проверяет, должен ли файл кэшироваться
@@ -158,6 +193,9 @@ func BitdefenderProxyHandler(cfg *config.Config, logger *logrus.Logger) echo.Han
 			if _, err := os.Stat(localPath); err == nil {
 				// Файл уже закэширован, отдаём его
 				logger.Infof("Bitdefender proxy: serving cached file: %s", localPath)
+				if servePatchedVersion(c, localPath, requestPath) {
+					return nil
+				}
 				return c.File(localPath)
 			}
 		}
