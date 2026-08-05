@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"bytes"
-	"compress/gzip"
 	"crypto/rand"
 	"database/sql"
 	"encoding/json"
@@ -146,33 +145,22 @@ func antivirusLinkHandler(cfg *config.Config, logger *logrus.Logger) echo.Handle
 		if cfg.BitdefenderMode == "disabled" {
 			return c.String(http.StatusNotFound, "404 Not found")
 		}
-		base := strings.TrimSpace(os.Getenv("KERIO_ANTIVIRUS_UPSTREAM"))
-		if base == "" {
-			base = cfg.BitdefenderProxyBaseURL
+		if cfg.GetLicenseNumber() == "" {
+			logger.Error("Antivirus CDN: LicenseNumber is required for antivirus updates")
+			return c.String(http.StatusForbidden, "403 Forbidden")
 		}
-		if base == "" {
-			base = "https://upgrade.bitdefender.com"
-		}
-		if strings.Contains(base, "bdupdate.kerio.com") {
-			cdn, err := discoverKerioCDN(cfg, c.QueryParam("version"))
-			if err != nil {
-				if errors.Is(err, errCDNLicenseInvalid) {
-					license := cfg.GetLicenseNumber()
-					cfg.ClearLicenseNumber()
-					notifyCDNError(cfg, logger, "license %s invalid or expired, Kerio CDN updates disabled: %v", license, err)
-				} else {
-					notifyCDNError(cfg, logger, "CDN discovery failed for version %q: %v", c.QueryParam("version"), err)
-				}
-				return c.String(http.StatusBadGateway, "502 Bad Gateway")
+		cdn, err := discoverKerioCDN(cfg, c.QueryParam("version"))
+		if err != nil {
+			if errors.Is(err, errCDNLicenseInvalid) {
+				license := cfg.GetLicenseNumber()
+				cfg.ClearLicenseNumber()
+				notifyCDNError(cfg, logger, "license %s invalid or expired, Kerio CDN updates disabled: %v", license, err)
+				return c.String(http.StatusForbidden, "403 Forbidden")
 			}
-			base = cdn
+			notifyCDNError(cfg, logger, "CDN discovery failed for version %q: %v", c.QueryParam("version"), err)
+			return c.String(http.StatusBadGateway, "502 Bad Gateway")
 		}
-		if err := writeAtomicText(filepath.Join("mirror", "antivirus", "upstream.url"), strings.TrimRight(base, "/")); err != nil {
-			return c.String(http.StatusInternalServerError, "500 Internal Server Error")
-		}
-		if envBool("KERIO_ANTIVIRUS_DIRECT", false) {
-			return c.String(http.StatusOK, "THDdir="+strings.TrimRight(base, "/"))
-		}
+		logger.Infof("Kerio CDN discovered: %s for license %s", cdn, cfg.GetLicenseNumber())
 		return c.String(http.StatusOK, "THDdir="+publicBaseURL(c)+apiBase+"/antivirus/files")
 	}
 }
@@ -186,20 +174,12 @@ func cachedVendorFileHandler(cfg *config.Config, logger *logrus.Logger, service 
 		if rel == "" {
 			return c.String(http.StatusBadRequest, "400 Bad Request")
 		}
-		// Сжатый versions.dat.gz намеренно не отдаём (404): клиент Kerio
-		// откатится на распакованный versions.dat, который зеркало патчит
-		// под Linux-движок. Подпись versions.sig при этом остаётся валидной.
-		if path.Base(rel) == "versions.dat.gz" {
-			logger.Debugf("%s: skipping compressed versions.dat.gz for %q (forcing uncompressed fallback)", service, rel)
-			return c.String(http.StatusNotFound, "404 Not found")
-		}
 		upstream := vendorUpstream(cfg, service)
 		if service == "antivirus" {
-			if b, err := os.ReadFile(filepath.Join("mirror", "antivirus", "upstream.url")); err == nil && strings.TrimSpace(string(b)) != "" {
-				upstream = strings.TrimSpace(string(b))
-			}
-			if mapped := mirror.LinuxEnginePath(rel); mapped != "" {
-				rel = mapped
+			var ok bool
+			if upstream, ok = cfg.GetKerioCDN(); !ok {
+				logger.Error("Antivirus file request rejected: Kerio CDN has not been discovered")
+				return c.String(http.StatusForbidden, "403 Forbidden")
 			}
 		}
 		local, err := safeJoin(filepath.Join("mirror", service), filepath.FromSlash(rel))
@@ -224,42 +204,25 @@ func cachedVendorFileHandler(cfg *config.Config, logger *logrus.Logger, service 
 				logger.Warnf("%s cache fetch failed for %s: %v", service, rel, err)
 				return c.String(http.StatusBadGateway, "502 Bad Gateway")
 			}
+			if service == "antivirus" && mirror.IsBitdefenderEngineArchive(rel) {
+				if err := mirror.ValidateLinuxEngineGzip(local); err != nil {
+					_ = os.Remove(local)
+					if errors.Is(err, mirror.ErrWindowsPEEngine) {
+						logger.Error("FATAL: Upstream returned Windows PE instead of Linux ELF. Check License Number and Kerio CDN routing.")
+					}
+					return c.String(http.StatusBadGateway, "502 Bad Gateway")
+				}
+			}
 		}
-		return serveVendorFile(c, local, rel, service == "antivirus")
-	}
-}
-
-func serveVendorFile(c echo.Context, local, rel string, patchManifest bool) error {
-	if !patchManifest {
-		return c.File(local)
-	}
-	switch path.Base(rel) {
-	case "versions.dat":
-		b, err := os.ReadFile(local)
-		if err != nil {
-			return c.String(http.StatusNotFound, "404 Not found")
+		if service == "antivirus" && mirror.IsBitdefenderEngineArchive(rel) {
+			if err := mirror.ValidateLinuxEngineGzip(local); err != nil {
+				_ = os.Remove(local)
+				if errors.Is(err, mirror.ErrWindowsPEEngine) {
+					logger.Error("FATAL: Upstream returned Windows PE instead of Linux ELF. Check License Number and Kerio CDN routing.")
+				}
+				return c.String(http.StatusBadGateway, "502 Bad Gateway")
+			}
 		}
-		return c.Blob(http.StatusOK, "application/octet-stream", mirror.PatchBitdefenderVersions(b))
-	case "versions.dat.gz":
-		b, err := os.ReadFile(local)
-		if err != nil {
-			return c.String(http.StatusNotFound, "404 Not found")
-		}
-		zr, err := gzip.NewReader(bytes.NewReader(b))
-		if err != nil {
-			return c.File(local)
-		}
-		raw, err := io.ReadAll(zr)
-		_ = zr.Close()
-		if err != nil {
-			return c.File(local)
-		}
-		var out bytes.Buffer
-		zw := gzip.NewWriter(&out)
-		_, _ = zw.Write(mirror.PatchBitdefenderVersions(raw))
-		_ = zw.Close()
-		return c.Blob(http.StatusOK, "application/gzip", out.Bytes())
-	default:
 		return c.File(local)
 	}
 }
@@ -547,18 +510,15 @@ func vendorUpstream(cfg *config.Config, service string) string {
 		}
 		return "https://upgrade.bitdefender.com"
 	}
-	if v := strings.TrimSpace(os.Getenv("KERIO_ANTIVIRUS_UPSTREAM")); v != "" {
-		return v
-	}
-	if cfg.BitdefenderProxyBaseURL != "" {
-		return cfg.BitdefenderProxyBaseURL
-	}
-	return "https://upgrade.bitdefender.com"
+	return ""
 }
 
 var errCDNLicenseInvalid = errors.New("Kerio CDN: invalid or expired product license")
 
 func discoverKerioCDN(cfg *config.Config, version string) (string, error) {
+	if cdn, ok := cfg.GetKerioCDN(); ok {
+		return cdn, nil
+	}
 	if cfg.GetLicenseNumber() == "" {
 		return "", errors.New("license number is missing")
 	}
@@ -576,13 +536,19 @@ func discoverKerioCDN(cfg *config.Config, version string) (string, error) {
 		return "", fmt.Errorf("CDN lookup failed (HTTP %d): %s", status, strings.TrimSpace(string(body)))
 	}
 	text := strings.TrimSpace(string(body))
-	if strings.Contains(text, "Invalid product license") || strings.Contains(text, "Maintenance expired") {
+	if strings.Contains(text, "Invalid product license") || strings.Contains(text, "Maintenance_expired") || strings.Contains(text, "Maintenance expired") {
 		return "", fmt.Errorf("%w (%s)", errCDNLicenseInvalid, text)
 	}
 	if !strings.HasPrefix(text, "THDdir=") {
 		return "", fmt.Errorf("unexpected CDN response: %s", text)
 	}
-	return strings.TrimRight(strings.TrimPrefix(text, "THDdir="), "/"), nil
+	cdn := strings.TrimRight(strings.TrimPrefix(text, "THDdir="), "/")
+	parsed, err := url.Parse(cdn)
+	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" {
+		return "", fmt.Errorf("invalid Kerio CDN URL: %q", cdn)
+	}
+	cfg.SetKerioCDN(cdn)
+	return cdn, nil
 }
 
 // notifyCDNError логирует ошибку CDN и отправляет уведомление в Telegram,

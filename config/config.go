@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -34,6 +35,7 @@ type Config struct {
 	EnableIDS4               bool     // Включить обновление IDS4
 	EnableIDS5               bool     // Включить обновление IDS5
 	BitdefenderProxyBaseURL  string   // Базовый URL для прокси Bitdefender
+	KerioCDNCacheTTLSeconds  int      // TTL обнаруженного Kerio CDN для антивируса
 	EnableSnortTemplate      bool     // Включить обновление шаблона Snort для IPS
 	SnortTemplateURL         string   // URL для скачивания snort.tpl
 	EnableShieldMatrix       bool     // Включить обновление Shield Matrix (Kerio 9.5+)
@@ -51,7 +53,10 @@ type Config struct {
 	TelegramNotifyOnStart    bool     // Send notification when update starts
 	WebFilterForcedKey       string   // Принудительный Web Filter ключ (env KERIO_WEBFILTER_FORCED_KEY)
 
-	licenseMu sync.RWMutex // защищает LicenseNumber при очистке невалидной лицензии
+	licenseMu         sync.RWMutex // защищает LicenseNumber при очистке невалидной лицензии
+	cdnMu             sync.RWMutex
+	kerioCDNURL       string
+	kerioCDNExpiresAt time.Time
 }
 
 // GetLicenseNumber возвращает номер лицензии потокобезопасно.
@@ -71,12 +76,50 @@ func (c *Config) SetLicenseNumber(v string) {
 	}
 	c.licenseMu.Lock()
 	defer c.licenseMu.Unlock()
-	c.LicenseNumber = v
+	if c.LicenseNumber != v {
+		c.LicenseNumber = v
+		c.ClearKerioCDN()
+	}
 }
 
 // ClearLicenseNumber очищает невалидную/просроченную лицензию.
 func (c *Config) ClearLicenseNumber() {
 	c.SetLicenseNumber("")
+}
+
+// GetKerioCDN returns a still-valid Kerio antivirus CDN URL.
+func (c *Config) GetKerioCDN() (string, bool) {
+	if c == nil {
+		return "", false
+	}
+	c.cdnMu.RLock()
+	defer c.cdnMu.RUnlock()
+	return c.kerioCDNURL, c.kerioCDNURL != "" && time.Now().Before(c.kerioCDNExpiresAt)
+}
+
+// SetKerioCDN stores the CDN endpoint obtained from bdupdate.kerio.com.
+func (c *Config) SetKerioCDN(endpoint string) {
+	if c == nil {
+		return
+	}
+	ttl := time.Duration(c.KerioCDNCacheTTLSeconds) * time.Second
+	if ttl <= 0 {
+		ttl = 15 * time.Minute
+	}
+	c.cdnMu.Lock()
+	c.kerioCDNURL = endpoint
+	c.kerioCDNExpiresAt = time.Now().Add(ttl)
+	c.cdnMu.Unlock()
+}
+
+func (c *Config) ClearKerioCDN() {
+	if c == nil {
+		return
+	}
+	c.cdnMu.Lock()
+	c.kerioCDNURL = ""
+	c.kerioCDNExpiresAt = time.Time{}
+	c.cdnMu.Unlock()
 }
 
 func Load(path string) (*Config, error) {
@@ -112,7 +155,8 @@ func Load(path string) (*Config, error) {
 	viper.SetDefault("ENABLE_IDS3", true)
 	viper.SetDefault("ENABLE_IDS4", true)
 	viper.SetDefault("ENABLE_IDS5", true)
-	viper.SetDefault("BITDEFENDER_PROXY_BASE_URL", "https://upgrade.bitdefender.com")
+	viper.SetDefault("BITDEFENDER_PROXY_BASE_URL", "https://bdupdate.kerio.com")
+	viper.SetDefault("KERIO_CDN_CACHE_TTL_SECONDS", 900)
 	viper.SetDefault("ENABLE_SNORT_TEMPLATE", true)
 	viper.SetDefault("SNORT_TEMPLATE_URL", "http://download.kerio.com/control-update/config/v1/snort.tpl")
 	viper.SetDefault("ENABLE_SHIELD_MATRIX", true)
@@ -158,6 +202,7 @@ func Load(path string) (*Config, error) {
 		EnableIDS4:               viper.GetBool("ENABLE_IDS4"),
 		EnableIDS5:               viper.GetBool("ENABLE_IDS5"),
 		BitdefenderProxyBaseURL:  viper.GetString("BITDEFENDER_PROXY_BASE_URL"),
+		KerioCDNCacheTTLSeconds:  viper.GetInt("KERIO_CDN_CACHE_TTL_SECONDS"),
 		EnableSnortTemplate:      viper.GetBool("ENABLE_SNORT_TEMPLATE"),
 		SnortTemplateURL:         viper.GetString("SNORT_TEMPLATE_URL"),
 		EnableShieldMatrix:       viper.GetBool("ENABLE_SHIELD_MATRIX"),
@@ -210,6 +255,7 @@ func Save(cfg *Config, path string) error {
 	viper.Set("ENABLE_IDS4", cfg.EnableIDS4)
 	viper.Set("ENABLE_IDS5", cfg.EnableIDS5)
 	viper.Set("BITDEFENDER_PROXY_BASE_URL", cfg.BitdefenderProxyBaseURL)
+	viper.Set("KERIO_CDN_CACHE_TTL_SECONDS", cfg.KerioCDNCacheTTLSeconds)
 	viper.Set("ENABLE_SNORT_TEMPLATE", cfg.EnableSnortTemplate)
 	viper.Set("SNORT_TEMPLATE_URL", cfg.SnortTemplateURL)
 	viper.Set("ENABLE_SHIELD_MATRIX", cfg.EnableShieldMatrix)

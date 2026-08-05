@@ -93,14 +93,15 @@ IP=:: PORT=8300 ./kerio-mirror-go -config config.yaml
 | Параметр | Опис | Типове значення |
 |----------|------|-----------------|
 | `SCHEDULE_TIME` | Час щоденного оновлення у форматі `HH:MM` | `03:00` |
-| `LICENSE_NUMBER` | Номер ліцензії Kerio Control для IDS/WebFilter | обов'язково |
+| `LICENSE_NUMBER` | Номер ліцензії Kerio Control для IDS/WebFilter і антивірусу | обов'язково |
 | `DATABASE_PATH` | Шлях до SQLite бази | `./mirror.db` |
 | `LOG_PATH` | Шлях до лог-файлу | `./logs/mirror.log` |
 | `LOG_LEVEL` | Рівень логування | `info` |
 | `PROXY_URL` | Outbound proxy для HTTP-запитів | порожньо |
 | `ENABLE_IDS1` - `ENABLE_IDS5` | Увімкнення версій IDS | `true` |
 | `BITDEFENDER_MODE` | `disabled`, `mirror` або `proxy` | `disabled` |
-| `BITDEFENDER_PROXY_BASE_URL` | Upstream для proxy mode | `https://upgrade.bitdefender.com` |
+| `BITDEFENDER_PROXY_BASE_URL` | Endpoint авторизації антивірусу | `https://bdupdate.kerio.com` |
+| `KERIO_CDN_CACHE_TTL_SECONDS` | TTL Kerio CDN, отриманого за ліцензією | `900` |
 | `ENABLE_SHIELD_MATRIX` | Shield Matrix для Kerio 9.5+ | `true` |
 | `SHIELD_MATRIX_BASE_URL` | Endpoint перевірки Shield Matrix | `https://shieldmatrix-updates.gfikeriocontrol.com/check_update/` |
 | `SHIELD_MATRIX_CLIENT_ID` | Client ID для Shield Matrix | `control` |
@@ -137,7 +138,8 @@ ENABLE_IDS5: true
 IDS_URL: https://update.kerio.com/dwn/control/update.php?license=%s&version=%s
 
 BITDEFENDER_MODE: "disabled"
-BITDEFENDER_PROXY_BASE_URL: https://upgrade.bitdefender.com
+BITDEFENDER_PROXY_BASE_URL: https://bdupdate.kerio.com
+KERIO_CDN_CACHE_TTL_SECONDS: 900
 BITDEFENDER_URLS: []
 
 ENABLE_SHIELD_MATRIX: true

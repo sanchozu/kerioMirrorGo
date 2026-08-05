@@ -74,8 +74,8 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.RetryCount != 3 {
 		t.Errorf("Expected default RetryCount 3, got %d", cfg.RetryCount)
 	}
-	if cfg.BitdefenderProxyBaseURL != "https://upgrade.bitdefender.com" {
-		t.Errorf("Expected default BitdefenderProxyBaseURL 'https://upgrade.bitdefender.com', got '%s'", cfg.BitdefenderProxyBaseURL)
+	if cfg.BitdefenderProxyBaseURL != "https://bdupdate.kerio.com" {
+		t.Errorf("Expected default BitdefenderProxyBaseURL 'https://bdupdate.kerio.com', got '%s'", cfg.BitdefenderProxyBaseURL)
 	}
 	if cfg.BitdefenderMode != "disabled" {
 		t.Errorf("Expected default BitdefenderMode 'disabled', got '%s'", cfg.BitdefenderMode)
@@ -151,6 +151,18 @@ func TestLicenseAccessors(t *testing.T) {
 	cfg.ClearLicenseNumber()
 	if got := cfg.GetLicenseNumber(); got != "" {
 		t.Errorf("GetLicenseNumber() after clear = %q, want empty", got)
+	}
+}
+
+func TestKerioCDNCache(t *testing.T) {
+	cfg := &Config{KerioCDNCacheTTLSeconds: 60}
+	cfg.SetKerioCDN("https://cdn.example.test/kerio")
+	if got, ok := cfg.GetKerioCDN(); !ok || got != "https://cdn.example.test/kerio" {
+		t.Fatalf("GetKerioCDN() = %q, %v", got, ok)
+	}
+	cfg.ClearKerioCDN()
+	if _, ok := cfg.GetKerioCDN(); ok {
+		t.Fatal("Kerio CDN cache remains valid after ClearKerioCDN")
 	}
 }
 
