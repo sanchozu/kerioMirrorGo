@@ -233,6 +233,7 @@ func selectDashboardLanguage(c echo.Context) string {
 func dashboardText(lang string) map[string]string {
 	en := map[string]string{
 		"Dashboard":             "Dashboard",
+		"MirrorVersion":         "Mirror version",
 		"CurrentTime":           "Current time",
 		"LastUpdate":            "Last update",
 		"NextScheduled":         "Next scheduled",
@@ -278,6 +279,7 @@ func dashboardText(lang string) map[string]string {
 	}
 	return map[string]string{
 		"Dashboard":             "Панель",
+		"MirrorVersion":         "Версія дзеркала",
 		"CurrentTime":           "Поточний час",
 		"LastUpdate":            "Останнє оновлення",
 		"NextScheduled":         "Наступне за розкладом",
@@ -288,7 +290,7 @@ func dashboardText(lang string) map[string]string {
 		"DatabaseStatus":        "Стан баз",
 		"IDSDatabases":          "Бази IDS",
 		"AntivirusDatabase":     "Антивірусна база",
-		"ThreatIntelligence":    "Threat Intelligence",
+		"ThreatIntelligence":    "Аналітика загроз",
 		"Configuration":         "Конфігурація",
 		"System":                "Система",
 		"Database":              "База даних",

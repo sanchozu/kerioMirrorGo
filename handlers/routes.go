@@ -30,6 +30,7 @@ import (
 // DashboardStatus holds info for the dashboard page
 type DashboardStatus struct {
 	ServiceName          string
+	Version              string
 	CurrentTime          string
 	Config               *config.Config
 	IDSVersions          map[string]int
@@ -127,6 +128,7 @@ func getDashboardStatus(cfg *config.Config) (*DashboardStatus, error) {
 
 	return &DashboardStatus{
 		ServiceName:          "Kerio Mirror Go",
+		Version:              "v0.5.5",
 		CurrentTime:          time.Now().Format("2006-01-02 15:04:05 MST"),
 		Config:               cfg,
 		IDSVersions:          idsVersions,
@@ -396,6 +398,21 @@ func serveFullRawLogHandler(path string) echo.HandlerFunc {
 		}
 		c.Response().Header().Set("Content-Type", "text/plain; charset=utf-8")
 		return c.String(http.StatusOK, string(data))
+	}
+}
+
+func clearLogHandler(path string, logger *logrus.Logger) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+		if err != nil {
+			logger.Errorf("Failed to clear log file: %v", err)
+			return c.String(http.StatusInternalServerError, "Failed to clear log file")
+		}
+		if err := file.Close(); err != nil {
+			return c.String(http.StatusInternalServerError, "Failed to clear log file")
+		}
+		logger.Infof("Logs cleared manually by %s", c.RealIP())
+		return c.Redirect(http.StatusSeeOther, "/logs")
 	}
 }
 
