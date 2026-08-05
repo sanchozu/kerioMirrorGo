@@ -220,3 +220,18 @@ func TestCachedVendorFileVersionsDatGzipUsesClientFallback(t *testing.T) {
 		t.Fatalf("Expected status 404 for compressed metadata fallback, got %d", rec.Code)
 	}
 }
+
+func TestLegacyKerioPathDetection(t *testing.T) {
+	if !isLegacyVersionsGzip("av64bit_15039/versions.dat.gz") {
+		t.Fatal("expected legacy versions.dat.gz path")
+	}
+	if !isLegacyKerioRepositoryFile("av64bit_15039/avx/Plugins/7zip.xmd.gzip") {
+		t.Fatal("expected legacy plugin path")
+	}
+	if !isLegacyKerioRepositoryFile("av64bit_15039/bdcore.so.linux-x86_64.gzip") {
+		t.Fatal("expected legacy engine path")
+	}
+	if isLegacyKerioRepositoryFile("v2/repository/1/2/file.gzip") {
+		t.Fatal("v2 repository path must not be treated as legacy")
+	}
+}

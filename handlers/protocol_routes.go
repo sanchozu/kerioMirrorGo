@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"bytes"
+	"compress/gzip"
 	"crypto/rand"
 	"database/sql"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -33,6 +35,23 @@ import (
 const apiBase = "/api/kerio/updates"
 
 var cacheLocks sync.Map
+
+var kerioV3ManifestCache sync.Map
+
+type kerioVersionsID struct {
+	V3 struct {
+		DatPath string `xml:"dat_path,attr"`
+	} `xml:"v3"`
+}
+
+type kerioV3File struct {
+	LocalPath string `json:"local_path"`
+	URL       string `json:"url"`
+}
+
+type kerioV3Manifest struct {
+	Files []kerioV3File `json:"files"`
+}
 
 func RegisterProtocolRoutes(e *echo.Echo, cfg *config.Config, logger *logrus.Logger) {
 	e.GET(apiBase+"/ids/link", idsLinkHandler(cfg, logger))
@@ -186,15 +205,6 @@ func cachedVendorFileHandler(cfg *config.Config, logger *logrus.Logger, service 
 		if err != nil {
 			return c.String(http.StatusForbidden, "403 Forbidden")
 		}
-		// Kerio's updater expects a 404 for the historical compressed
-		// metadata URL and then retries the signed, uncompressed
-		// versions.dat. This must happen even if an old copy is already in
-		// the cache; never serve stale or regenerated metadata.
-		if service == "antivirus" && strings.EqualFold(path.Base(rel), "versions.dat.gz") {
-			_ = os.Remove(local)
-			return c.String(http.StatusNotFound, "404 Not Found")
-		}
-
 		unlock := lockCache(local)
 		defer unlock()
 		if path.Base(rel) == "versions.id" && cacheExpired(local, metadataTTL()) {
@@ -212,6 +222,19 @@ func cachedVendorFileHandler(cfg *config.Config, logger *logrus.Logger, service 
 			}
 			remote := strings.TrimRight(upstream, "/") + "/" + strings.TrimLeft(filepath.ToSlash(rel), "/")
 			downloadErr := downloadAtomic(cfg, remote, local, headers)
+			if downloadErr != nil && service == "antivirus" && strings.Contains(downloadErr.Error(), "upstream status 404") {
+				switch {
+				case isLegacyVersionsGzip(rel):
+					// Some Kerio 10.x clients do not retry the uncompressed
+					// metadata after a 404. Preserve the signed bytes from
+					// versions.dat and only restore the transport gzip wrapper.
+					downloadErr = downloadGzipFallbackAtomic(cfg, remote, local, headers)
+				case isLegacyKerioRepositoryFile(rel):
+					// Older clients construct av64bit_<id>/avx/... URLs, while
+					// the Kerio CDN stores these files under v2/repository/.
+					downloadErr = downloadLegacyKerioFileAtomic(cfg, upstream, rel, local, headers)
+				}
+			}
 			if downloadErr != nil {
 				if strings.Contains(downloadErr.Error(), "upstream status 404") {
 					logger.Debugf("%s upstream does not contain %s", service, rel)
@@ -627,6 +650,111 @@ func downloadAtomic(cfg *config.Config, target, destination string, headers map[
 		return fmt.Errorf("upstream status %d", status)
 	}
 	return writeAtomicBytes(destination, data)
+}
+
+func isLegacyVersionsGzip(rel string) bool {
+	clean := strings.TrimPrefix(filepath.ToSlash(rel), "/")
+	return strings.HasPrefix(clean, "av64bit_") && strings.HasSuffix(strings.ToLower(clean), "/versions.dat.gz")
+}
+
+func isLegacyKerioRepositoryFile(rel string) bool {
+	clean := strings.TrimPrefix(filepath.ToSlash(rel), "/")
+	return strings.HasPrefix(clean, "av64bit_") && strings.HasSuffix(strings.ToLower(clean), ".gzip") &&
+		(strings.Contains(clean, "/avx/") || strings.HasPrefix(path.Base(clean), "bdcore."))
+}
+
+// downloadGzipFallbackAtomic keeps versions.dat byte-for-byte intact while
+// restoring the gzip transport expected by older Kerio antivirus clients.
+func downloadGzipFallbackAtomic(cfg *config.Config, target, destination string, headers map[string]string) error {
+	plainTarget := strings.TrimSuffix(target, ".gz")
+	data, status, err := upstreamBytes(cfg, http.MethodGet, plainTarget, nil, headers)
+	if err != nil {
+		return err
+	}
+	if status != http.StatusOK {
+		return fmt.Errorf("upstream fallback status %d", status)
+	}
+	var compressed bytes.Buffer
+	zw := gzip.NewWriter(&compressed)
+	if _, err := zw.Write(data); err != nil {
+		return err
+	}
+	if err := zw.Close(); err != nil {
+		return err
+	}
+	return writeAtomicBytes(destination, compressed.Bytes())
+}
+
+func downloadLegacyKerioFileAtomic(cfg *config.Config, upstream, rel, destination string, headers map[string]string) error {
+	manifest, err := loadKerioV3Manifest(cfg, upstream, headers)
+	if err != nil {
+		return err
+	}
+	clean := strings.TrimPrefix(filepath.ToSlash(rel), "/")
+	avx := strings.Index(clean, "/avx/")
+	var localPath string
+	if avx >= 0 {
+		localPath = strings.TrimPrefix(clean[avx+len("/avx/"):], "/")
+	} else {
+		localPath = strings.TrimSuffix(path.Base(clean), ".gzip")
+	}
+	for _, file := range manifest.Files {
+		if file.LocalPath != localPath || file.URL == "" {
+			continue
+		}
+		remote := strings.TrimRight(upstream, "/") + "/" + strings.TrimLeft(file.URL, "/")
+		return downloadAtomic(cfg, remote, destination, headers)
+	}
+	return fmt.Errorf("Kerio v3 manifest has no file %q", localPath)
+}
+
+func loadKerioV3Manifest(cfg *config.Config, upstream string, headers map[string]string) (kerioV3Manifest, error) {
+	key := strings.TrimRight(upstream, "/")
+	if cached, ok := kerioV3ManifestCache.Load(key); ok {
+		return cached.(kerioV3Manifest), nil
+	}
+
+	idURL := key + "/av64bit/versions.id"
+	idBody, status, err := upstreamBytes(cfg, http.MethodGet, idURL, nil, headers)
+	if err != nil {
+		return kerioV3Manifest{}, err
+	}
+	if status != http.StatusOK {
+		return kerioV3Manifest{}, fmt.Errorf("versions.id status %d", status)
+	}
+	var versions kerioVersionsID
+	if err := xml.Unmarshal(idBody, &versions); err != nil {
+		return kerioV3Manifest{}, fmt.Errorf("parse Kerio versions.id: %w", err)
+	}
+	if versions.V3.DatPath == "" {
+		return kerioV3Manifest{}, errors.New("Kerio versions.id has no v3 dat path")
+	}
+	datURL := key + "/" + strings.TrimLeft(versions.V3.DatPath, "/")
+	datGzip, status, err := upstreamBytes(cfg, http.MethodGet, datURL, nil, headers)
+	if err != nil {
+		return kerioV3Manifest{}, err
+	}
+	if status != http.StatusOK {
+		return kerioV3Manifest{}, fmt.Errorf("versions3.dat status %d", status)
+	}
+	zr, err := gzip.NewReader(bytes.NewReader(datGzip))
+	if err != nil {
+		return kerioV3Manifest{}, fmt.Errorf("open versions3.dat gzip: %w", err)
+	}
+	plain, err := io.ReadAll(zr)
+	closeErr := zr.Close()
+	if err != nil {
+		return kerioV3Manifest{}, fmt.Errorf("read versions3.dat gzip: %w", err)
+	}
+	if closeErr != nil {
+		return kerioV3Manifest{}, fmt.Errorf("close versions3.dat gzip: %w", closeErr)
+	}
+	var manifest kerioV3Manifest
+	if err := json.Unmarshal(plain, &manifest); err != nil {
+		return kerioV3Manifest{}, fmt.Errorf("parse versions3.dat: %w", err)
+	}
+	kerioV3ManifestCache.Store(key, manifest)
+	return manifest, nil
 }
 
 func writeAtomicBytes(destination string, data []byte) error {
