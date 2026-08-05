@@ -1,4 +1,4 @@
-# Kerio CDN routing (v0.5.6)
+# Kerio CDN routing (v0.5.7)
 
 Antivirus files are now cached on demand from the licensed Kerio CDN. The
 mirror preserves the exact request path, including `/v2/repository/...`, and

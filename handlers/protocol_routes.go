@@ -186,6 +186,14 @@ func cachedVendorFileHandler(cfg *config.Config, logger *logrus.Logger, service 
 		if err != nil {
 			return c.String(http.StatusForbidden, "403 Forbidden")
 		}
+		// Kerio's updater expects a 404 for the historical compressed
+		// metadata URL and then retries the signed, uncompressed
+		// versions.dat. This must happen even if an old copy is already in
+		// the cache; never serve stale or regenerated metadata.
+		if service == "antivirus" && strings.EqualFold(path.Base(rel), "versions.dat.gz") {
+			_ = os.Remove(local)
+			return c.String(http.StatusNotFound, "404 Not Found")
+		}
 
 		unlock := lockCache(local)
 		defer unlock()
@@ -193,14 +201,6 @@ func cachedVendorFileHandler(cfg *config.Config, logger *logrus.Logger, service 
 			_ = removeVersionSiblings(filepath.Dir(local))
 		}
 		if info, err := os.Stat(local); err != nil || !info.Mode().IsRegular() {
-			// Kerio's updater expects a 404 for the historical compressed
-			// metadata URL and then retries the signed, uncompressed
-			// versions.dat. Do not synthesize a new gzip stream: changing the
-			// transport wrapper can make older SDKs reject the metadata.
-			if service == "antivirus" && strings.EqualFold(path.Base(rel), "versions.dat.gz") {
-				_ = os.Remove(local)
-				return c.String(http.StatusNotFound, "404 Not Found")
-			}
 			headers := map[string]string{"Accept": "*/*", "Connection": "Keep-Alive"}
 			if service == "antivirus" {
 				headers["User-Agent"] = "WSLib 1.4 [3, 0, 0, 94]"
