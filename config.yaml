@@ -1,6 +1,7 @@
 allowed_ips: []
 bitdefender_mode: proxy
-bitdefender_proxy_base_url: https://upgrade.bitdefender.com
+bitdefender_proxy_base_url: https://bdupdate.kerio.com
+kerio_cdn_cache_ttl_seconds: 900
 blocked_ips: []
 custom_download_urls:
     - http://download.kerio.com/control-update/config/v1/snort.tpl

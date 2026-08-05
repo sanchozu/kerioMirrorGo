@@ -186,19 +186,19 @@ func TestRegistrationEmulation_ConnectFromCache(t *testing.T) {
 	}
 }
 
-func TestCachedVendorFile_versionsDatGz_NotFound(t *testing.T) {
+func TestCachedVendorFileWithoutDiscoveredCDNForbidden(t *testing.T) {
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodGet, "/api/kerio/updates/antivirus/files/av64bit_97276/versions.dat.gz", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/kerio/updates/antivirus/files/av64bit_97276/versions.dat", nil)
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 	c.SetParamNames("*")
-	c.SetParamValues("av64bit_97276/versions.dat.gz")
+	c.SetParamValues("av64bit_97276/versions.dat")
 
 	cfg := &config.Config{BitdefenderMode: "proxy"}
 	if err := cachedVendorFileHandler(cfg, logrus.New(), "antivirus")(c); err != nil {
 		t.Fatalf("Handler returned error: %v", err)
 	}
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("Expected status 404, got %d", rec.Code)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("Expected status 403, got %d", rec.Code)
 	}
 }

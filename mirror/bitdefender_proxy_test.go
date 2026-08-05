@@ -1,9 +1,39 @@
 package mirror
 
 import (
-	"strings"
+	"compress/gzip"
+	"errors"
+	"os"
 	"testing"
 )
+
+func TestValidateLinuxEngineGzip(t *testing.T) {
+	writeGzip := func(t *testing.T, contents []byte) string {
+		t.Helper()
+		file := t.TempDir() + "/bdcore.dll.gzip"
+		f, err := os.Create(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w := gzip.NewWriter(f)
+		if _, err := w.Write(contents); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return file
+	}
+	if err := ValidateLinuxEngineGzip(writeGzip(t, []byte{0x7f, 'E', 'L', 'F', 2})); err != nil {
+		t.Fatalf("ELF archive rejected: %v", err)
+	}
+	if err := ValidateLinuxEngineGzip(writeGzip(t, []byte{'M', 'Z', 0, 0})); !errors.Is(err, ErrWindowsPEEngine) {
+		t.Fatalf("PE archive error = %v, want ErrWindowsPEEngine", err)
+	}
+}
 
 func TestShouldCache(t *testing.T) {
 	tests := []struct {
@@ -106,28 +136,5 @@ func BenchmarkShouldCache(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		shouldCache(paths[i%len(paths)])
-	}
-}
-
-func TestPatchBitdefenderVersions(t *testing.T) {
-	in := []byte("+ 2aea119dd74349d432b4f2c9b0bae125 bdcore.dll 73716\n" +
-		"0 0ba21fbc4e1ccbb0942261c18e317de7 bdcore.so.freebsd11-x86_64 18855\n" +
-		"0 e3c1cf2bbc5cd280bcb0d82459ea9bc5 bdcore.so.linux-x86_64 17905\n" +
-		"0 c7eafab33bc845099e873a90229741c8 bdcore.so.macosx-x86_64 23668\n" +
-		"1 11111111111111111111111111111111 plugins.dat 999\n")
-	out := string(PatchBitdefenderVersions(in))
-
-	if !strings.Contains(out, "e3c1cf2bbc5cd280bcb0d82459ea9bc5 bdcore.dll 17905") {
-		t.Errorf("bdcore.dll entry not patched to linux engine md5/size:\n%s", out)
-	}
-	if !strings.Contains(out, "e3c1cf2bbc5cd280bcb0d82459ea9bc5 bdcore.so.linux-x86_64 17905") {
-		t.Errorf("linux engine entry changed unexpectedly:\n%s", out)
-	}
-	if !strings.Contains(out, "11111111111111111111111111111111 plugins.dat 999") {
-		t.Errorf("unrelated line changed:\n%s", out)
-	}
-
-	if got := string(PatchBitdefenderVersions([]byte("+ 2aea... bdcore.dll 73716\n"))); got != "+ 2aea... bdcore.dll 73716\n" {
-		t.Errorf("data without linux engine entry should be unchanged, got:\n%s", got)
 	}
 }

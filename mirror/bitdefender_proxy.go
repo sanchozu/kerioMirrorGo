@@ -3,6 +3,7 @@ package mirror
 import (
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,96 +20,47 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+var ErrWindowsPEEngine = errors.New("Bitdefender engine is Windows PE")
+
+// IsBitdefenderEngineArchive identifies compressed engine binaries without
+// making assumptions about the vendor's platform-specific file name.
+func IsBitdefenderEngineArchive(requestPath string) bool {
+	name := strings.ToLower(path.Base(requestPath))
+	return strings.HasPrefix(name, "bdcore.") && strings.HasSuffix(name, ".gzip")
+}
+
+// ValidateLinuxEngineGzip rejects a Windows executable before it enters the
+// mirror cache. A valid Linux shared object starts with ELF (0x7f, E, L, F).
+func ValidateLinuxEngineGzip(filename string) error {
+	f, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		return err
+	}
+	defer zr.Close()
+	magic := make([]byte, 4)
+	n, err := io.ReadFull(zr, magic)
+	if err != nil && err != io.ErrUnexpectedEOF {
+		return err
+	}
+	if n >= 2 && magic[0] == 'M' && magic[1] == 'Z' {
+		return ErrWindowsPEEngine
+	}
+	if n < 4 || !bytes.Equal(magic, []byte{0x7f, 'E', 'L', 'F'}) {
+		return errors.New("Bitdefender engine is not a Linux ELF binary")
+	}
+	return nil
+}
+
 // Список файлов, которые НЕ должны кэшироваться (всегда запрашиваются с сервера)
 var nonCacheableFiles = []string{
 	"versions.id",    // Информация о версиях баз
 	"version.txt",    // Альтернативный файл версий
 	"cumulative.txt", // Кумулятивная информация
-}
-
-// LinuxEnginePath возвращает путь к Linux-движку Bitdefender, если клиент
-// запросил движок bdcore.dll.gzip. Kerio Control (Linux) запрашивает движок
-// по пути avx/bdcore.dll.gzip, но сервер обновлений Kerio отдаёт по этому
-// пути Linux-движок (bdcore.so.linux-x86_64.gzip). Публичный CDN Bitdefender
-// хранит там настоящую Windows-DLL, поэтому подставляем Linux-движок.
-func LinuxEnginePath(requestPath string) string {
-	if path.Base(requestPath) != "bdcore.dll.gzip" {
-		return ""
-	}
-	return strings.Replace(requestPath, "bdcore.dll.gzip", "bdcore.so.linux-x86_64.gzip", 1)
-}
-
-// PatchBitdefenderVersions приводит manifest versions.dat в соответствие с
-// тем, что зеркало реально отдаёт Linux-клиенту: файл bdcore.dll.gzip у нас
-// содержит Linux-движок (bdcore.so.linux-x86_64), но запись "bdcore.dll" в
-// versions.dat указывает md5/размер Windows-DLL. Это вызывает ошибку
-// контрольной суммы у Kerio Control. Функция переносит md5/размер Linux-движка
-// в запись "bdcore.dll", оставляя имя файла без изменений.
-func PatchBitdefenderVersions(data []byte) []byte {
-	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
-	var (
-		linuxMd5  string
-		linuxSize string
-		dllLine   = -1
-	)
-	for i, line := range lines {
-		parts := strings.Fields(line)
-		if len(parts) < 4 {
-			continue
-		}
-		switch parts[2] {
-		case "bdcore.so.linux-x86_64":
-			if linuxMd5 == "" {
-				linuxMd5, linuxSize = parts[1], parts[3]
-			}
-		case "bdcore.dll":
-			dllLine = i
-		}
-	}
-	if linuxMd5 == "" || dllLine < 0 {
-		return data
-	}
-	parts := strings.Fields(lines[dllLine])
-	if len(parts) < 4 {
-		return data
-	}
-	parts[1] = linuxMd5
-	parts[3] = linuxSize
-	lines[dllLine] = strings.Join(parts, " ")
-	return []byte(strings.Join(lines, "\n"))
-}
-
-// servePatchedVersion отдаёт versions.dat / versions.dat.gz с приведённым
-// манифестом (см. PatchBitdefenderVersions). Возвращает false, если файл не
-// относится к версиям или его не удалось прочитать/распаковать.
-func servePatchedVersion(c echo.Context, localPath, requestPath string) bool {
-	switch path.Base(requestPath) {
-	case "versions.dat":
-		data, err := os.ReadFile(localPath)
-		if err != nil {
-			return false
-		}
-		return c.Blob(http.StatusOK, http.DetectContentType(data), PatchBitdefenderVersions(data)) == nil
-	case "versions.dat.gz":
-		data, err := os.ReadFile(localPath)
-		if err != nil {
-			return false
-		}
-		gzr, err := gzip.NewReader(bytes.NewReader(data))
-		if err != nil {
-			return false
-		}
-		raw, err := io.ReadAll(gzr)
-		if err != nil {
-			return false
-		}
-		var buf bytes.Buffer
-		gzw := gzip.NewWriter(&buf)
-		gzw.Write(PatchBitdefenderVersions(raw))
-		gzw.Close()
-		return c.Blob(http.StatusOK, "application/gzip", buf.Bytes()) == nil
-	}
-	return false
 }
 
 // shouldCache проверяет, должен ли файл кэшироваться
@@ -151,14 +103,6 @@ func BitdefenderProxyHandler(cfg *config.Config, logger *logrus.Logger) echo.Han
 		// Формируем путь к локальному кэшированному файлу
 		localPath := filepath.Join("mirror/bitdefender", filepath.Clean(requestPath))
 
-		// Kerio Control (Linux) запрашивает движок как bdcore.dll.gzip, но
-		// ожидает по этому пути Linux-движок. Подставляем Linux-движок и для
-		// локального кэша, и для запроса на удалённый сервер.
-		if enginePath := LinuxEnginePath(requestPath); enginePath != "" {
-			localPath = filepath.Join("mirror/bitdefender", filepath.Clean(enginePath))
-			requestPath = enginePath
-		}
-
 		// Проверка на path traversal
 		absBase, err := filepath.Abs("mirror/bitdefender")
 		if err != nil {
@@ -193,8 +137,14 @@ func BitdefenderProxyHandler(cfg *config.Config, logger *logrus.Logger) echo.Han
 			if _, err := os.Stat(localPath); err == nil {
 				// Файл уже закэширован, отдаём его
 				logger.Infof("Bitdefender proxy: serving cached file: %s", localPath)
-				if servePatchedVersion(c, localPath, requestPath) {
-					return nil
+				if IsBitdefenderEngineArchive(requestPath) {
+					if err := ValidateLinuxEngineGzip(localPath); err != nil {
+						_ = os.Remove(localPath)
+						if errors.Is(err, ErrWindowsPEEngine) {
+							logger.Error("FATAL: Upstream returned Windows PE instead of Linux ELF. Check License Number and Kerio CDN routing.")
+						}
+						return c.String(http.StatusBadGateway, "502 Bad Gateway")
+					}
 				}
 				return c.File(localPath)
 			}
@@ -202,10 +152,10 @@ func BitdefenderProxyHandler(cfg *config.Config, logger *logrus.Logger) echo.Han
 
 		// Файл не найден в кэше, запрашиваем с удалённого сервера
 		// Проверяем и корректируем базовый URL
-		baseURL := cfg.BitdefenderProxyBaseURL
-		if baseURL == "" {
-			baseURL = "https://upgrade.bitdefender.com"
-			logger.Warnf("Bitdefender proxy: BitdefenderProxyBaseURL is empty, using default: %s", baseURL)
+		baseURL, ok := cfg.GetKerioCDN()
+		if !ok {
+			logger.Error("Bitdefender proxy: Kerio CDN has not been discovered")
+			return c.String(http.StatusForbidden, "403 Forbidden")
 		}
 		// Убираем двойные слеши при конкатенации URL
 		baseURL = strings.TrimSuffix(baseURL, "/")
@@ -242,7 +192,13 @@ func BitdefenderProxyHandler(cfg *config.Config, logger *logrus.Logger) echo.Han
 				time.Sleep(retryDelay)
 			}
 
-			resp, err = client.Get(remoteURL)
+			req, reqErr := http.NewRequest(http.MethodGet, remoteURL, nil)
+			if reqErr != nil {
+				return c.String(http.StatusBadGateway, "502 Bad Gateway")
+			}
+			req.Header.Set("User-Agent", "WSLib 1.4 [3, 0, 0, 94]")
+			req.Header.Set("Accept", "*/*")
+			resp, err = client.Do(req)
 			if err == nil && resp.StatusCode == http.StatusOK {
 				break // Успешный запрос
 			}

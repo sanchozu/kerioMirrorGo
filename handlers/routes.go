@@ -2,8 +2,6 @@ package handlers
 
 import (
 	"bufio"
-	"bytes"
-	"compress/gzip"
 	"fmt"
 	"io"
 	"net/http"
@@ -469,11 +467,7 @@ func updateKerioHandler(cfg *config.Config, logger *logrus.Logger) echo.HandlerF
 			logger.Infof("Responding to Shield Matrix request for version %s: %s", version, response)
 			return c.String(http.StatusOK, response)
 		case 9, 10:
-			// Если включен режим прокси Bitdefender, перенаправляем клиента на наш сервер
-			if cfg.BitdefenderMode == "proxy" {
-				return c.String(http.StatusOK, "THDdir=http://"+c.Request().Host+"/")
-			}
-			return c.String(http.StatusOK, "THDdir=https://bdupdate.kerio.com/../")
+			return antivirusLinkHandler(cfg, logger)(c)
 		}
 
 		// Regular versions (1-5)
@@ -765,9 +759,6 @@ func fallbackHandler(cfg *config.Config, logger *logrus.Logger) echo.HandlerFunc
 				return c.String(http.StatusBadRequest, "400 Bad Request")
 			}
 			localPath := filepath.Join("mirror/bitdefender", filepath.Clean(filePath))
-			if enginePath := mirror.LinuxEnginePath(filePath); enginePath != "" {
-				localPath = filepath.Join("mirror/bitdefender", filepath.Clean(enginePath))
-			}
 			absBase, _ := filepath.Abs("mirror/bitdefender")
 			absFile, _ := filepath.Abs(localPath)
 			if !strings.HasPrefix(absFile, absBase) {
@@ -778,22 +769,6 @@ func fallbackHandler(cfg *config.Config, logger *logrus.Logger) echo.HandlerFunc
 			if err != nil {
 				logger.Warnf("Bitdefender handler: file not found: %s", localPath)
 				return c.String(http.StatusNotFound, "404 Not found")
-			}
-			// Приводим manifest versions.dat в соответствие с отдаваемым
-			// Linux-движком (см. mirror.PatchBitdefenderVersions).
-			switch filepath.Base(filePath) {
-			case "versions.dat":
-				data = mirror.PatchBitdefenderVersions(data)
-			case "versions.dat.gz":
-				if gzr, err := gzip.NewReader(bytes.NewReader(data)); err == nil {
-					if raw, err := io.ReadAll(gzr); err == nil {
-						patched := bytes.NewBuffer(nil)
-						gzw := gzip.NewWriter(patched)
-						gzw.Write(mirror.PatchBitdefenderVersions(raw))
-						gzw.Close()
-						data = patched.Bytes()
-					}
-				}
 			}
 			contentType := http.DetectContentType(data)
 			// logger.Infof("Serving Bitdefender file: %s", localPath)

@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"kerio-mirror-go/config"
-	"kerio-mirror-go/mirror"
 
 	"github.com/labstack/echo/v4"
 	"github.com/sirupsen/logrus"
@@ -65,12 +64,8 @@ func TestUpdateKerioHandler_Version9_ProxyDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Handler returned error: %v", err)
 	}
-	if rec.Code != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", rec.Code)
-	}
-	expected := "THDdir=https://bdupdate.kerio.com/../"
-	if rec.Body.String() != expected {
-		t.Errorf("Expected body '%s', got '%s'", expected, rec.Body.String())
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("Expected status 404, got %d", rec.Code)
 	}
 }
 
@@ -97,12 +92,8 @@ func TestUpdateKerioHandler_Version9_ProxyEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Handler returned error: %v", err)
 	}
-	if rec.Code != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", rec.Code)
-	}
-	expected := "THDdir=http://localhost:8080/"
-	if rec.Body.String() != expected {
-		t.Errorf("Expected body '%s', got '%s'", expected, rec.Body.String())
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("Expected status 403 without required license, got %d", rec.Code)
 	}
 }
 
@@ -129,12 +120,8 @@ func TestUpdateKerioHandler_Version10_ProxyEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Handler returned error: %v", err)
 	}
-	if rec.Code != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", rec.Code)
-	}
-	expected := "THDdir=http://192.168.1.1/"
-	if rec.Body.String() != expected {
-		t.Errorf("Expected body '%s', got '%s'", expected, rec.Body.String())
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("Expected status 403 without required license, got %d", rec.Code)
 	}
 }
 
@@ -214,24 +201,6 @@ func TestWebFilterKeyHandler_NoLicense(t *testing.T) {
 	}
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("Expected status 404, got %d", rec.Code)
-	}
-}
-
-func TestLinuxEnginePath(t *testing.T) {
-	tests := []struct {
-		requestPath string
-		expected    string
-	}{
-		{"av64bit_97275/avx/bdcore.dll.gzip", "av64bit_97275/avx/bdcore.so.linux-x86_64.gzip"},
-		{"av64bit/avx/bdcore.dll.gzip", "av64bit/avx/bdcore.so.linux-x86_64.gzip"},
-		{"av64bit_97275/avx/Plugins/emalware.114.gzip", ""},
-		{"av64bit_97275/avx/bdcore.so.linux-x86_64.gzip", ""},
-		{"", ""},
-	}
-	for _, tc := range tests {
-		if got := mirror.LinuxEnginePath(tc.requestPath); got != tc.expected {
-			t.Errorf("LinuxEnginePath(%q) = %q, want %q", tc.requestPath, got, tc.expected)
-		}
 	}
 }
 
