@@ -12,32 +12,43 @@ permissions:
   contents: write
 
 jobs:
-  prepare-tag:
-    name: Create release tag
-    if: startsWith(github.ref, 'refs/heads/release/v')
+  prepare:
+    name: Prepare release
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Create and push tag
+      - name: Resolve version
+        id: version
         shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#release/}"
-          if git rev-parse "$VERSION" >/dev/null 2>&1; then
-            echo "Tag $VERSION already exists"
-            exit 0
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="$GITHUB_REF_NAME"
+          elif [[ "$GITHUB_REF" == refs/heads/release/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#release/}"
+          else
+            VERSION="v$(tr -d '\r\n ' < VERSION)"
           fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Release version: $VERSION"
+      - name: Create or update tag
+        if: startsWith(github.ref, 'refs/heads/release/v')
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$VERSION" -m "Release $VERSION"
-          git push origin "$VERSION"
+          git tag -fa "$VERSION" -m "Release $VERSION"
+          git push origin "refs/tags/$VERSION" --force
 
   test:
     name: Test and vet
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    needs: prepare
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,9 +64,8 @@ jobs:
 
   build:
     name: Build ${{ matrix.goos }}-${{ matrix.goarch }}
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    needs: test
+    needs: [prepare, test]
     strategy:
       fail-fast: false
       matrix:
@@ -100,9 +110,22 @@ jobs:
           name: kerio-mirror-go-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
           if-no-files-found: error
-      - name: Upload release asset
-        if: startsWith(github.ref, 'refs/tags/v')
+
+  publish:
+    name: Publish ${{ needs.prepare.outputs.version }}
+    runs-on: ubuntu-latest
+    needs: [prepare, build]
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          tag_name: ${{ needs.prepare.outputs.version }}
+          name: ${{ needs.prepare.outputs.version }}
           generate_release_notes: true
+          draft: false
+          prerelease: false
+          files: artifacts/**/kerio-mirror-go-*
