@@ -4,14 +4,39 @@ on:
   push:
     tags:
       - 'v*'
+    branches:
+      - 'release/v*'
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
+  prepare-tag:
+    name: Create release tag
+    if: startsWith(github.ref, 'refs/heads/release/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Create and push tag
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#release/}"
+          if git rev-parse "$VERSION" >/dev/null 2>&1; then
+            echo "Tag $VERSION already exists"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$VERSION" -m "Release $VERSION"
+          git push origin "$VERSION"
+
   test:
     name: Test and vet
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -28,6 +53,7 @@ jobs:
 
   build:
     name: Build ${{ matrix.goos }}-${{ matrix.goarch }}
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     needs: test
     strategy:
@@ -46,7 +72,6 @@ jobs:
           - goos: windows
             goarch: '386'
             ext: '.exe'
-          # modernc.org/sqlite is pure Go here, so darwin cross-builds are expected to work with CGO disabled.
           - goos: darwin
             goarch: amd64
             ext: ''
@@ -80,3 +105,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
+          generate_release_notes: true
