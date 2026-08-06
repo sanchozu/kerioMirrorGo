@@ -247,7 +247,7 @@ func cachedVendorFileHandler(cfg *config.Config, logger *logrus.Logger, service 
 				if err := mirror.ValidateLinuxEngineGzip(local); err != nil {
 					_ = os.Remove(local)
 					if errors.Is(err, mirror.ErrWindowsPEEngine) {
-						logger.Error("FATAL: Upstream returned Windows PE instead of Linux ELF. Check License Number and Kerio CDN routing.")
+						logger.Errorf("FATAL: Upstream returned Windows PE instead of Linux ELF for %s. Check License Number and Kerio CDN routing.", rel)
 					}
 					return c.String(http.StatusBadGateway, "502 Bad Gateway")
 				}
@@ -257,7 +257,7 @@ func cachedVendorFileHandler(cfg *config.Config, logger *logrus.Logger, service 
 			if err := mirror.ValidateLinuxEngineGzip(local); err != nil {
 				_ = os.Remove(local)
 				if errors.Is(err, mirror.ErrWindowsPEEngine) {
-					logger.Error("FATAL: Upstream returned Windows PE instead of Linux ELF. Check License Number and Kerio CDN routing.")
+					logger.Errorf("FATAL: Upstream returned Windows PE instead of Linux ELF for %s. Check License Number and Kerio CDN routing.", rel)
 				}
 				return c.String(http.StatusBadGateway, "502 Bad Gateway")
 			}
